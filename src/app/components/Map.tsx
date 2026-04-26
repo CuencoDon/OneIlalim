@@ -902,8 +902,6 @@ export default function Map({
     }
     setAlertActive(false);
     setAlertDisasterId(null);
-    localStorage.removeItem("activeDisasterId");
-    localStorage.removeItem("alertActive");
   }, []);
 
   const startAlert = useCallback((disaster: Disaster) => {
@@ -946,15 +944,13 @@ export default function Map({
     setAlertActive(true);
     setAlertDisasterId(disaster.id);
 
-    localStorage.setItem("activeDisasterId", disaster.id);
-    localStorage.setItem("alertActive", "true");
-
     if (onFocusDisaster) onFocusDisaster(disaster.id);
     setTimeout(() => {
       disasterMarkersRef.current[disaster.id]?.openPopup();
     }, 500);
   }, [stopAlert, onFocusDisaster, alertActive, alertDisasterId]);
 
+  const prevDisastersRef = useRef<Disaster[]>([]);
   useEffect(() => {
     const activeDisaster = disasters.find(d => d.status === "active");
     if (activeDisaster) {
@@ -963,20 +959,6 @@ export default function Map({
       stopAlert();
     }
   }, [disasters, startAlert, stopAlert]);
-
-  useEffect(() => {
-    const storedDisasterId = localStorage.getItem("activeDisasterId");
-    const storedAlertActive = localStorage.getItem("alertActive");
-    if (storedDisasterId && storedAlertActive === "true") {
-      const disaster = disasters.find(d => d.id === storedDisasterId);
-      if (disaster) {
-        startAlert(disaster);
-      } else {
-        localStorage.removeItem("activeDisasterId");
-        localStorage.removeItem("alertActive");
-      }
-    }
-  }, [disasters, startAlert]);
 
   useEffect(() => {
     return () => {
