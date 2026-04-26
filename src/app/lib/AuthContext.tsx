@@ -33,71 +33,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRefetchCounter(prev => prev + 1);
   };
 
+  const fetchUserRole = async (userId: string, fallbackRole?: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .single();
+      if (!error && profile?.role) return profile.role;
+      return fallbackRole || null;
+    } catch {
+      return fallbackRole || null;
+    }
+  };
+
   useEffect(() => {
+    let isMounted = true;
+
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
+
         if (session) {
           setUser(session.user);
           setUserMeta(session.user.user_metadata || null);
-          
-          try {
-            const { data: profile, error } = await supabase
-              .from("profiles")
-              .select("role")
-              .eq("id", session.user.id)
-              .single();
-            
-            if (!error && profile) {
-              setUserRole(profile.role || session.user.user_metadata?.role || null);
-            } else {
-              setUserRole(session.user.user_metadata?.role || null);
-            }
-          } catch {
-            setUserRole(session.user.user_metadata?.role || null);
-          }
+          const role = await fetchUserRole(session.user.id, session.user.user_metadata?.role);
+          setUserRole(role);
+        } else {
+          setUser(null);
+          setUserMeta(null);
+          setUserRole(null);
         }
-      } catch {
+      } catch (error) {
+        console.error("Auth init error:", error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
 
     initAuth();
-  }, []);
 
-  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
-          if (session) {
-            setUser(session.user);
-            setUserMeta(session.user.user_metadata || null);
-            try {
-              const { data: profile, error } = await supabase
-                .from("profiles")
-                .select("role")
-                .eq("id", session.user.id)
-                .single();
-              
-              if (!error && profile) {
-                setUserRole(profile.role || session.user.user_metadata?.role || null);
-              } else {
-                setUserRole(session.user.user_metadata?.role || null);
-              }
-            } catch {
-              setUserRole(session.user.user_metadata?.role || null);
-            }
-          } else {
-            setUser(null);
-            setUserMeta(null);
-            setUserRole(null);
-          }
+        if (!isMounted) return;
+
+        setIsLoading(true);
+
+        if (session) {
+          setUser(session.user);
+          setUserMeta(session.user.user_metadata || null);
+          const role = await fetchUserRole(session.user.id, session.user.user_metadata?.role);
+          setUserRole(role);
+        } else {
+          setUser(null);
+          setUserMeta(null);
+          setUserRole(null);
         }
+
+        setIsLoading(false);
       }
     );
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -110,11 +111,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (user && refetchCounter > 0) {
+      const updateRole = async () => {
+        const role = await fetchUserRole(user.id, userMeta?.role);
+        setUserRole(role);
+      };
+      updateRole();
+    }
+  }, [refetchCounter, user, userMeta?.role]);
 
   return (
     <AuthContext.Provider value={{ user, userMeta, isLoading, userRole, tabVisible, triggerRefetch }}>
