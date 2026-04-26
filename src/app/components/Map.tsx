@@ -683,15 +683,15 @@ export default function Map({
   const user = currentUser;
   const role = currentUserRole;
 
-  // --- REAL-TIME DISASTERS STATE ---
   const [localDisasters, setLocalDisasters] = useState<Disaster[]>(disasters);
 
-  // Subscribe to real-time changes on the disasters table
   useEffect(() => {
     const channel = supabase
       .channel('disasters-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'disasters' }, (payload) => {
-        setLocalDisasters((prev) => [...prev, payload.new as Disaster]);
+        const newDisaster = payload.new as Disaster;
+        setLocalDisasters((prev) => [...prev, newDisaster]);
+        startAlert(newDisaster);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'disasters' }, (payload) => {
         setLocalDisasters((prev) =>
@@ -706,14 +706,11 @@ export default function Map({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []); // Only subscribe once
+  }, []);
 
-  // Sync with prop only on initial mount (subsequent changes come from real-time)
   useEffect(() => {
     setLocalDisasters(disasters);
-  }, []); // Run only once at mount
-
-  // --- end real-time section ---
+  }, []);
 
   const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">("disaster");
   const [locationMode, setLocationMode] = useState<"current" | "pick">("current");
@@ -827,7 +824,6 @@ export default function Map({
 
       if (!profile) return;
 
-      // Insert – real-time subscription will add it to localDisasters automatically
       await supabase.from("disasters").insert({
         user_id: user.id,
         full_name: `${profile.first_name} ${profile.last_name}`,
@@ -988,7 +984,6 @@ export default function Map({
     }, 500);
   }, [stopAlert, onFocusDisaster, alertActive, alertDisasterId]);
 
-  // Alert on the most recent active disaster
   useEffect(() => {
     const activeDisaster = localDisasters.find(d => d.status === "active");
     if (activeDisaster) {
@@ -998,7 +993,6 @@ export default function Map({
     }
   }, [localDisasters, startAlert, stopAlert]);
 
-  // Restore alert after page refresh (from localStorage)
   useEffect(() => {
     const storedDisasterId = localStorage.getItem("activeDisasterId");
     const storedAlertActive = localStorage.getItem("alertActive");
@@ -1274,13 +1268,13 @@ export default function Map({
       )}
 
       {alertActive && (
-        <div className="fixed bottom-4 right-4 z-[10000]">
+        <div className="fixed top-[72px] right-4 z-[10000]">
           <button
             onClick={handleStopAlert}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-full p-3 shadow-lg transition-all flex items-center gap-2"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 shadow-lg transition-all flex items-center gap-1"
           >
-            <VolumeX size={24} />
-            <span className="text-sm font-medium">Stop Alert</span>
+            <VolumeX size={16} />
+            <span className="text-xs font-medium">Stop Alert</span>
           </button>
         </div>
       )}
