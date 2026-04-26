@@ -29,9 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tabVisible, setTabVisible] = useState(true);
   const [refetchCounter, setRefetchCounter] = useState(0);
 
-  const triggerRefetch = () => {
-    setRefetchCounter(prev => prev + 1);
-  };
+  const triggerRefetch = () => setRefetchCounter(prev => prev + 1);
 
   const fetchUserRole = async (userId: string, fallbackRole?: string) => {
     try {
@@ -51,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
 
     const initAuth = async () => {
+      setIsLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!isMounted) return;
@@ -102,21 +101,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      const isVisible = document.visibilityState === "visible";
-      setTabVisible(isVisible);
-      if (isVisible) {
-        triggerRefetch();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
-  useEffect(() => {
     if (user && refetchCounter > 0) {
       const updateRole = async () => {
         const role = await fetchUserRole(user.id, userMeta?.role);
@@ -125,6 +109,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateRole();
     }
   }, [refetchCounter, user, userMeta?.role]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isVisible = document.visibilityState === "visible";
+      setTabVisible(isVisible);
+      if (isVisible) triggerRefetch();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, userMeta, isLoading, userRole, tabVisible, triggerRefetch }}>
