@@ -23,11 +23,17 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
 
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
-    if (!isLoading && !userMeta && pathname !== "/") {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || isLoading) return;
+    if (!userMeta && pathname !== "/") {
       router.push("/");
     }
-  }, [isLoading, userMeta, pathname, router]);
+  }, [mounted, isLoading, userMeta, pathname, router]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -86,113 +92,128 @@ export default function Header() {
     tap: { scale: 0.95 },
   };
 
+  if (!mounted) return null;
+
+  if (isLoading) {
+    return (
+      <header
+        className="fixed top-0 left-0 right-0 z-[900] backdrop-blur shadow-md px-4 sm:px-6 lg:px-8"
+        style={{ height: HEADER_HEIGHT, backgroundColor: "rgba(30, 58, 138, 0.95)" }}
+      >
+        <div className="flex h-full items-center justify-center">
+          <div className="text-white/80 text-sm">Loading...</div>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <>
       <header
         className="fixed top-0 left-0 right-0 z-[900] backdrop-blur shadow-md px-4 sm:px-6 lg:px-8"
         style={{ height: HEADER_HEIGHT, backgroundColor: "rgba(30, 58, 138, 0.95)" }}
       >
-        {!isLoading && (
-          <AnimatePresence mode="wait">
-            {isLoggedOut ? (
-              <motion.div
-                key="logged-out"
-                variants={headerContentVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="grid h-full grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center"
-              >
-                <div className="hidden md:block" />
-                <div className="flex h-full items-center justify-center">
-                  <div className="h-full w-px bg-white/30 self-stretch mr-4" />
-                  <motion.button
-                    variants={iconVariants}
-                    whileHover="hover"
-                    whileTap="tap"
-                    onClick={() => setShowAuth(true)}
-                    className="rounded-full bg-white/10 p-2 hover:bg-white/20"
-                  >
-                    <User size={20} className="text-white" />
-                  </motion.button>
-                  <div className="h-full w-px bg-white/30 self-stretch ml-4" />
-                </div>
-                <div className="hidden md:flex justify-end">
-                  <div className="text-right leading-tight">
-                    <div className="text-sm font-semibold text-white" suppressHydrationWarning>
-                      {formatClockDate(currentTime)}
-                    </div>
-                    <div className="text-xs text-white/80" suppressHydrationWarning>
-                      {formatClockTime(currentTime)}
-                    </div>
+        {/* Remove !isLoading guard; AnimatePresence always renders */}
+        <AnimatePresence mode="wait">
+          {isLoggedOut ? (
+            <motion.div
+              key="logged-out"
+              variants={headerContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="grid h-full grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center"
+            >
+              <div className="hidden md:block" />
+              <div className="flex h-full items-center justify-center">
+                <div className="h-full w-px bg-white/30 self-stretch mr-4" />
+                <motion.button
+                  variants={iconVariants}
+                  whileHover="hover"
+                  whileTap="tap"
+                  onClick={() => setShowAuth(true)}
+                  className="rounded-full bg-white/10 p-2 hover:bg-white/20"
+                >
+                  <User size={20} className="text-white" />
+                </motion.button>
+                <div className="h-full w-px bg-white/30 self-stretch ml-4" />
+              </div>
+              <div className="hidden md:flex justify-end">
+                <div className="text-right leading-tight">
+                  <div className="text-sm font-semibold text-white" suppressHydrationWarning>
+                    {formatClockDate(currentTime)}
+                  </div>
+                  <div className="text-xs text-white/80" suppressHydrationWarning>
+                    {formatClockTime(currentTime)}
                   </div>
                 </div>
-              </motion.div>
-            ) : isLoggedIn && (
-              <motion.div
-                key="logged-in"
-                variants={headerContentVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="grid h-full grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center"
-              >
-                <div className="hidden md:block" />
-                <div className="flex h-full items-center justify-center">
-                  <div className="h-full w-px bg-white/30 self-stretch mr-4" />
-                  <div className="flex h-full items-center gap-4">
-                    {navItems.map((item, idx) => {
-                      const Icon = item.icon;
-                      const isActive = !item.isUser && pathname === item.href;
-                      return (
-                        <div key={`${item.href}-${idx}`} className="flex h-full items-center">
-                          {item.isUser ? (
-                            <motion.button
-                              variants={iconVariants}
-                              whileHover="hover"
-                              whileTap="tap"
-                              onClick={() => setShowUserPopup(true)}
-                              className="rounded-full bg-white/10 p-2 hover:bg-white/20"
+              </div>
+            </motion.div>
+          ) : isLoggedIn && (
+            <motion.div
+              key="logged-in"
+              variants={headerContentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="grid h-full grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center"
+            >
+              <div className="hidden md:block" />
+              <div className="flex h-full items-center justify-center">
+                <div className="h-full w-px bg-white/30 self-stretch mr-4" />
+                <div className="flex h-full items-center gap-4">
+                  {navItems.map((item, idx) => {
+                    const Icon = item.icon;
+                    const isActive = !item.isUser && pathname === item.href;
+                    return (
+                      <div key={`${item.href}-${idx}`} className="flex h-full items-center">
+                        {item.isUser ? (
+                          <motion.button
+                            variants={iconVariants}
+                            whileHover="hover"
+                            whileTap="tap"
+                            onClick={() => setShowUserPopup(true)}
+                            className="rounded-full bg-white/10 p-2 hover:bg-white/20"
+                          >
+                            <Icon size={20} className="text-white" />
+                          </motion.button>
+                        ) : (
+                          <motion.div variants={iconVariants} whileHover="hover" whileTap="tap">
+                            <Link
+                              href={item.href}
+                              className={`flex items-center p-2 text-sm font-medium ${
+                                isActive ? "text-white" : "text-white/70 hover:text-white"
+                              }`}
                             >
-                              <Icon size={20} className="text-white" />
-                            </motion.button>
-                          ) : (
-                            <motion.div variants={iconVariants} whileHover="hover" whileTap="tap">
-                              <Link
-                                href={item.href}
-                                className={`flex items-center p-2 text-sm font-medium ${
-                                  isActive ? "text-white" : "text-white/70 hover:text-white"
-                                }`}
-                              >
-                                <Icon className="w-5 h-5" />
-                              </Link>
-                            </motion.div>
-                          )}
-                          {idx < navItems.length - 1 && (
-                            <div className="ml-4 w-px bg-white/30 self-stretch" />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="h-full w-px bg-white/30 self-stretch ml-4" />
+                              <Icon className="w-5 h-5" />
+                            </Link>
+                          </motion.div>
+                        )}
+                        {idx < navItems.length - 1 && (
+                          <div className="ml-4 w-px bg-white/30 self-stretch" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="hidden md:flex justify-end">
-                  <div className="text-right leading-tight">
-                    <div className="text-sm font-semibold text-white" suppressHydrationWarning>
-                      {formatClockDate(currentTime)}
-                    </div>
-                    <div className="text-xs text-white/80" suppressHydrationWarning>
-                      {formatClockTime(currentTime)}
-                    </div>
+                <div className="h-full w-px bg-white/30 self-stretch ml-4" />
+              </div>
+              <div className="hidden md:flex justify-end">
+                <div className="text-right leading-tight">
+                  <div className="text-sm font-semibold text-white" suppressHydrationWarning>
+                    {formatClockDate(currentTime)}
+                  </div>
+                  <div className="text-xs text-white/80" suppressHydrationWarning>
+                    {formatClockTime(currentTime)}
                   </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
+      {/* Popup modals unchanged – they already work fine */}
       <AnimatePresence>
         {showUserPopup && userMeta && (
           <motion.div
