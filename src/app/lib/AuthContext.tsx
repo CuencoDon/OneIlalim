@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+  useCallback,
+} from "react";
 import { supabase } from "./supabaseClient";
 import { User } from "@supabase/supabase-js";
 
@@ -8,6 +15,8 @@ type UserMeta = {
   first_name?: string;
   last_name?: string;
   role?: string;
+  email?: string;
+  contact_number?: string;
 };
 
 type AuthContextType = {
@@ -29,66 +38,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tabVisible, setTabVisible] = useState(true);
   const [refetchCounter, setRefetchCounter] = useState(0);
 
-  const triggerRefetch = () => setRefetchCounter(prev => prev + 1);
+  const triggerRefetch = () => setRefetchCounter((prev) => prev + 1);
 
-  const fetchUserRole = async (userId: string, fallbackRole?: string) => {
-    try {
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", userId)
-        .single();
-      if (!error && profile?.role) return profile.role;
-      return fallbackRole || null;
-    } catch {
-      return fallbackRole || null;
-    }
-  };
+  const fetchUserRole = useCallback(
+    async (userId: string, fallbackRole?: string | null) => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (!error && data?.role) {
+          return data.role;
+        }
+
+        return fallbackRole ?? null;
+      } catch {
+        return fallbackRole ?? null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     let isMounted = true;
 
+    const applySession = (session: any) => {
+      if (!isMounted) return;
+
+      const sessionUser = session?.user ?? null;
+
+      setUser(sessionUser);
+      setUserMeta((sessionUser?.user_metadata as UserMeta) ?? null);
+
+      if (!sessionUser) {
+        setUserRole(null);
+      }
+    };
+
     const initAuth = async () => {
       setIsLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!isMounted) return;
 
-        if (session) {
-          setUser(session.user);
-          setUserMeta(session.user.user_metadata || null);
-          const role = await fetchUserRole(session.user.id, session.user.user_metadata?.role);
-          setUserRole(role);
-        } else {
-          setUser(null);
-          setUserMeta(null);
-          setUserRole(null);
-        }
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        applySession(session);
       } catch (error) {
         console.error("Auth init error:", error);
+        setUser(null);
+        setUserMeta(null);
+        setUserRole(null);
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!isMounted) return;
-
-        if (session) {
-          setUser(session.user);
-          setUserMeta(session.user.user_metadata || null);
-          const role = await fetchUserRole(session.user.id, session.user.user_metadata?.role);
-          setUserRole(role);
-        } else {
-          setUser(null);
-          setUserMeta(null);
-          setUserRole(null);
-        }
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Important: do NOT await Supabase queries here.
+      applySession(session);
+    });
 
     return () => {
       isMounted = false;
@@ -97,27 +114,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (user && refetchCounter > 0) {
-      const updateRole = async () => {
-        const role = await fetchUserRole(user.id, userMeta?.role);
+    let isMounted = true;
+
+    const updateRole = async () => {
+      if (!user) {
+        setUserRole(null);
+        return;
+      }
+
+      const fallbackRole = (user.user_metadata?.role as string | undefined) ?? null;
+
+      // Set fallback immediately so nav does not freeze while waiting.
+      setUserRole(fallbackRole);
+
+      const role = await fetchUserRole(user.id, fallbackRole);
+
+      if (isMounted) {
         setUserRole(role);
-      };
-      updateRole();
-    }
-  }, [refetchCounter, user, userMeta?.role]);
+      }
+    };
+
+    updateRole();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, refetchCounter, fetchUserRole]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
       const isVisible = document.visibilityState === "visible";
       setTabVisible(isVisible);
-      if (isVisible) triggerRefetch();
+
+      if (isVisible) {
+        triggerRefetch();
+      }
     };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, userMeta, isLoading, userRole, tabVisible, triggerRefetch }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        userMeta,
+        isLoading,
+        userRole,
+        tabVisible,
+        triggerRefetch,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -125,8 +176,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
+
   return context;
 }

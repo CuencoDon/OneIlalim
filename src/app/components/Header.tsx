@@ -97,7 +97,7 @@ export default function Header() {
   return (
     <>
       <header
-        className="fixed top-0 left-0 right-0 z-[900] backdrop-blur shadow-md px-4 sm:px-6 lg:px-8"
+        className="fixed top-0 left-0 right-0 z-[9998] pointer-events-auto backdrop-blur shadow-md px-4 sm:px-6 lg:px-8"
         style={{ height: HEADER_HEIGHT, backgroundColor: "rgba(30, 58, 138, 0.95)" }}
       >
         <AnimatePresence mode="wait">
@@ -202,7 +202,7 @@ export default function Header() {
       <AnimatePresence>
         {showUserPopup && user && (
           <motion.div
-            className={`${MODAL_BACKDROP_CLASS} z-[9999] flex items-center justify-center p-4`}
+            className={`${MODAL_BACKDROP_CLASS} z-[10000] flex items-center justify-center p-4`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
