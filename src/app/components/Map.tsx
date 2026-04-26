@@ -683,6 +683,38 @@ export default function Map({
   const user = currentUser;
   const role = currentUserRole;
 
+  // --- REAL-TIME DISASTERS STATE ---
+  const [localDisasters, setLocalDisasters] = useState<Disaster[]>(disasters);
+
+  // Subscribe to real-time changes on the disasters table
+  useEffect(() => {
+    const channel = supabase
+      .channel('disasters-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'disasters' }, (payload) => {
+        setLocalDisasters((prev) => [...prev, payload.new as Disaster]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'disasters' }, (payload) => {
+        setLocalDisasters((prev) =>
+          prev.map((d) => (d.id === payload.new.id ? (payload.new as Disaster) : d))
+        );
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'disasters' }, (payload) => {
+        setLocalDisasters((prev) => prev.filter((d) => d.id !== payload.old.id));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []); // Only subscribe once
+
+  // Sync with prop only on initial mount (subsequent changes come from real-time)
+  useEffect(() => {
+    setLocalDisasters(disasters);
+  }, []); // Run only once at mount
+
+  // --- end real-time section ---
+
   const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">("disaster");
   const [locationMode, setLocationMode] = useState<"current" | "pick">("current");
   const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
@@ -706,8 +738,8 @@ export default function Map({
   const initialRequestDone = useRef(false);
 
   const focusedDisasterObj = useMemo(
-    () => disasters.find((d) => focusDisaster?.id === d.id),
-    [disasters, focusDisaster]
+    () => localDisasters.find((d) => focusDisaster?.id === d.id),
+    [localDisasters, focusDisaster]
   );
   const focusedEvacObj = useMemo(
     () => evacuationSites.find((s) => focusEvacuationSite?.id === s.id),
@@ -795,6 +827,7 @@ export default function Map({
 
       if (!profile) return;
 
+      // Insert – real-time subscription will add it to localDisasters automatically
       await supabase.from("disasters").insert({
         user_id: user.id,
         full_name: `${profile.first_name} ${profile.last_name}`,
@@ -902,6 +935,8 @@ export default function Map({
     }
     setAlertActive(false);
     setAlertDisasterId(null);
+    localStorage.removeItem("activeDisasterId");
+    localStorage.removeItem("alertActive");
   }, []);
 
   const startAlert = useCallback((disaster: Disaster) => {
@@ -944,21 +979,39 @@ export default function Map({
     setAlertActive(true);
     setAlertDisasterId(disaster.id);
 
+    localStorage.setItem("activeDisasterId", disaster.id);
+    localStorage.setItem("alertActive", "true");
+
     if (onFocusDisaster) onFocusDisaster(disaster.id);
     setTimeout(() => {
       disasterMarkersRef.current[disaster.id]?.openPopup();
     }, 500);
   }, [stopAlert, onFocusDisaster, alertActive, alertDisasterId]);
 
-  const prevDisastersRef = useRef<Disaster[]>([]);
+  // Alert on the most recent active disaster
   useEffect(() => {
-    const activeDisaster = disasters.find(d => d.status === "active");
+    const activeDisaster = localDisasters.find(d => d.status === "active");
     if (activeDisaster) {
       startAlert(activeDisaster);
     } else {
       stopAlert();
     }
-  }, [disasters, startAlert, stopAlert]);
+  }, [localDisasters, startAlert, stopAlert]);
+
+  // Restore alert after page refresh (from localStorage)
+  useEffect(() => {
+    const storedDisasterId = localStorage.getItem("activeDisasterId");
+    const storedAlertActive = localStorage.getItem("alertActive");
+    if (storedDisasterId && storedAlertActive === "true") {
+      const disaster = localDisasters.find(d => d.id === storedDisasterId);
+      if (disaster) {
+        startAlert(disaster);
+      } else {
+        localStorage.removeItem("activeDisasterId");
+        localStorage.removeItem("alertActive");
+      }
+    }
+  }, [localDisasters, startAlert]);
 
   useEffect(() => {
     return () => {
@@ -1051,10 +1104,10 @@ export default function Map({
         <CustomRoutingControl
           userLocation={routingUserLocation}
           destination={routingDestination}
-          disasters={disasters}
+          disasters={localDisasters}
         />
 
-        {disasters.map((disaster) => (
+        {localDisasters.map((disaster) => (
           <Marker
             key={disaster.id}
             position={[disaster.lat, disaster.lng]}
