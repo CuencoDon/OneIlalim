@@ -14,7 +14,7 @@ const HEADER_HEIGHT = 72;
 const MODAL_BACKDROP_CLASS = "fixed inset-0 bg-white/10 backdrop-blur-sm";
 
 export default function Header() {
-  const { userMeta, userRole, isLoading } = useAuth();
+  const { user, userMeta, userRole, isLoading } = useAuth();
   const [showAuth, setShowAuth] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showUserPopup, setShowUserPopup] = useState(false);
@@ -23,21 +23,18 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Fix #2: Mount guard to avoid hydration mismatch
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Fix #3: Safe redirect – only run after mounted and not loading
   useEffect(() => {
     if (!mounted || isLoading) return;
-    if (!userMeta && pathname !== "/") {
+    if (!user && pathname !== "/") {
       router.push("/");
     }
-  }, [mounted, isLoading, userMeta, pathname, router]);
+  }, [mounted, isLoading, user, pathname, router]);
 
-  // Clock updater
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
@@ -90,25 +87,12 @@ export default function Header() {
     tap: { scale: 0.95 },
   };
 
-  // Avoid SSR mismatch
   if (!mounted) return null;
 
-  // Show a simple loading bar while auth is initializing
-  if (isLoading) {
-    return (
-      <header
-        className="fixed top-0 left-0 right-0 z-[900] backdrop-blur shadow-md px-4 sm:px-6 lg:px-8"
-        style={{ height: HEADER_HEIGHT, backgroundColor: "rgba(30, 58, 138, 0.95)" }}
-      >
-        <div className="flex h-full items-center justify-center">
-          <div className="text-white/80 text-sm">Loading...</div>
-        </div>
-      </header>
-    );
-  }
+  if (isLoading) return null;
 
-  const isLoggedOut = !userMeta;
-  const isLoggedIn = !!userMeta;
+  const isLoggedOut = !user;
+  const isLoggedIn = !!user;
 
   return (
     <>
@@ -116,7 +100,6 @@ export default function Header() {
         className="fixed top-0 left-0 right-0 z-[900] backdrop-blur shadow-md px-4 sm:px-6 lg:px-8"
         style={{ height: HEADER_HEIGHT, backgroundColor: "rgba(30, 58, 138, 0.95)" }}
       >
-        {/* Always render AnimatePresence – no !isLoading guard */}
         <AnimatePresence mode="wait">
           {isLoggedOut ? (
             <motion.div
@@ -192,7 +175,9 @@ export default function Header() {
                             </Link>
                           </motion.div>
                         )}
-                        {idx < navItems.length - 1 && <div className="ml-4 w-px bg-white/30 self-stretch" />}
+                        {idx < navItems.length - 1 && (
+                          <div className="ml-4 w-px bg-white/30 self-stretch" />
+                        )}
                       </div>
                     );
                   })}
@@ -214,9 +199,8 @@ export default function Header() {
         </AnimatePresence>
       </header>
 
-      {/* Modals – unchanged, they work fine */}
       <AnimatePresence>
-        {showUserPopup && userMeta && (
+        {showUserPopup && user && (
           <motion.div
             className={`${MODAL_BACKDROP_CLASS} z-[9999] flex items-center justify-center p-4`}
             initial={{ opacity: 0 }}
@@ -232,7 +216,10 @@ export default function Header() {
               transition={{ duration: 0.2 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <button onClick={() => setShowUserPopup(false)} className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => setShowUserPopup(false)}
+                className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600"
+              >
                 <X size={18} />
               </button>
               <div className="flex flex-col items-center text-center">
@@ -311,10 +298,16 @@ export default function Header() {
               <h3 className="mb-2 text-lg font-semibold text-blue-900">Log Out?</h3>
               <p className="mb-6 text-sm text-gray-700">Are you sure you want to log out?</p>
               <div className="flex gap-3">
-                <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 rounded-lg border border-blue-900 px-4 py-2 text-sm text-blue-900 hover:bg-blue-100">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 rounded-lg border border-blue-900 px-4 py-2 text-sm text-blue-900 hover:bg-blue-100"
+                >
                   Cancel
                 </button>
-                <button onClick={handleLogout} className="flex-1 rounded-lg bg-blue-900 px-4 py-2 text-sm text-white hover:bg-blue-800">
+                <button
+                  onClick={handleLogout}
+                  className="flex-1 rounded-lg bg-blue-900 px-4 py-2 text-sm text-white hover:bg-blue-800"
+                >
                   Log Out
                 </button>
               </div>

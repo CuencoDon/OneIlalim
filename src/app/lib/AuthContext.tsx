@@ -77,8 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         if (!isMounted) return;
 
-        setIsLoading(true);
-
         if (session) {
           setUser(session.user);
           setUserMeta(session.user.user_metadata || null);
@@ -89,8 +87,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUserMeta(null);
           setUserRole(null);
         }
-
-        setIsLoading(false);
       }
     );
 
