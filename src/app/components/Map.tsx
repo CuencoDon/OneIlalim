@@ -686,11 +686,24 @@ export default function Map({
   const [localDisasters, setLocalDisasters] = useState<Disaster[]>(disasters);
 
   useEffect(() => {
+    const fetchDisasters = async () => {
+      const { data, error } = await supabase
+        .from("disasters")
+        .select("*")
+        .order("reported_at", { ascending: false });
+      if (!error && data) {
+        setLocalDisasters(data);
+      }
+    };
+    fetchDisasters();
+  }, []);
+
+  useEffect(() => {
     const channel = supabase
       .channel('disasters-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'disasters' }, (payload) => {
         const newDisaster = payload.new as Disaster;
-        setLocalDisasters((prev) => [...prev, newDisaster]);
+        setLocalDisasters((prev) => [newDisaster, ...prev]);
         startAlert(newDisaster);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'disasters' }, (payload) => {
@@ -706,10 +719,6 @@ export default function Map({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
-
-  useEffect(() => {
-    setLocalDisasters(disasters);
   }, []);
 
   const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">("disaster");
@@ -1268,7 +1277,7 @@ export default function Map({
       )}
 
       {alertActive && (
-        <div className="fixed top-[72px] right-4 z-[10000]">
+        <div className="fixed top-[80px] left-1/2 transform -translate-x-1/2 z-[10000]">
           <button
             onClick={handleStopAlert}
             className="bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 shadow-lg transition-all flex items-center gap-1"
