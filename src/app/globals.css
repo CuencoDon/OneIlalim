@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-nunito: "Nunito", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-nunito), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #111;
+  background: #fafafa;
+}
+
+.disaster-popup .leaflet-popup-content-wrapper,
+.evacuation-popup .leaflet-popup-content-wrapper {
+  padding: .5 !important;
+}
+
+.disaster-popup .leaflet-popup-content,
+.evacuation-popup .leaflet-popup-content {
+  margin: .5rem !important;
+}
+
+.disaster-popup .leaflet-popup-close-button,
+.evacuation-popup .leaflet-popup-close-button {
+  display: none !important;
+}
