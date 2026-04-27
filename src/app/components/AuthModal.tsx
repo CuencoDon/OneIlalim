@@ -138,12 +138,12 @@ export default function AuthModal({ onClose }: Props) {
         return;
       }
 
-      if (form.role === "official" && form.passcode !== "BRGY123") {
+      if (form.role === "official" && form.passcode !== "OfficialNEWILALIM@2026!") {
         setError("Invalid barangay official passcode.");
         setLoading(false);
         return;
       }
-      if (form.role === "resident" && form.passcode !== "RES123") {
+      if (form.role === "resident" && form.passcode !== "NewilalimRES@2026") {
         setError("Invalid resident passcode.");
         setLoading(false);
         return;
