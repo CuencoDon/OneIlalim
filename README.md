@@ -1,40 +1,152 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# OneIlalim
 
-## Getting Started
+### Smart Infrastructure Application for Integrated Disaster Intelligence and Evacuation Coordination
 
-First, run the development server:
+## Overview
+
+**OneIlalim** is a smart infrastructure application designed to enhance disaster response and evacuation coordination in Barangay New Ilalim.
+It leverages **IoT-enabled cameras** and **geospatial technologies** to provide real-time monitoring, reporting, and management of disaster-related incidents.
+
+The platform enables collaboration between residents and barangay officials, improving situational awareness and decision-making during emergencies.
+
+---
+
+## Features
+
+### Interactive Map & Disaster Reporting
+
+* Report incidents such as:
+
+  * Fire
+  * Accidents
+  * Floods
+  * Hazards
+* Real-time visualization of reports using an interactive map
+* Officials can resolve and remove reports
+
+### Live Camera Monitoring
+
+* Real-time riverbank camera feed
+* Supports flood monitoring and early warning
+
+### Weather Monitoring & Announcements
+
+* Displays weather forecasts
+* Officials can publish announcements and advisories
+
+### Disaster History *(Officials Only)*
+
+* Centralized archive of all reported incidents
+* Useful for disaster analysis and planning
+
+### Inventory Management *(Officials Only)*
+
+* Tracks barangay resources and emergency supplies
+* Supports efficient evacuation and response logistics
+
+---
+
+## User Roles
+
+### Residents
+
+* Submit disaster reports
+* View map, camera feed, and weather updates
+
+### Barangay Officials
+
+* Full system access
+* Manage and resolve reports
+* Post announcements
+* Access history and inventory
+
+---
+
+## Tech Stack
+
+* **Frontend:** Next.js
+* **Backend / Database:** Supabase
+* **Mapping:** Leaflet
+* **Hardware Integration:** IoT Cameras (River Monitoring)
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/CuencoDon/OneIlalim.git
+cd OneIlalim
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open in browser:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+---
 
-## Learn More
+## Configuration
 
-To learn more about Next.js, take a look at the following resources:
+Create a `.env.local` file and configure your Supabase credentials:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your_url_here
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Usage
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+* **Map Tab:** Report and monitor disasters
+* **Camera Tab:** View live river conditions
+* **Weather Tab:** Check forecasts and announcements
+* **History Tab:** *(Officials only)* View past incidents
+* **Inventory Tab:** *(Officials only)* Manage resources
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
-=======
-# OneIlalim
->>>>>>> 093ddb4ee951da80a99006c495e5e96450455d21
+---
+
+## Access Control
+
+Role-based access ensures that sensitive features are restricted to barangay officials:
+
+* Disaster history
+* Inventory management
+* Report resolution
+* Weather announcements
+
+---
+
+## Objectives
+
+* Improve disaster response time
+* Enhance coordination between residents and officials
+* Provide real-time situational awareness
+* Strengthen community disaster preparedness
+
+---
+
+## Authors
+
+* Caras, Eyron G.
+* Cuenco, Don Miguel L. Cuenco
+
+---
+
+## Contact
+
+* Caras, Eyron G. - 202311553@gordoncollege.edu.ph
+* Cuenco, Don Miguel L. Cuenco - 202310423@gordoncollege.edu.ph
