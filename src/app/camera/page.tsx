@@ -12,15 +12,13 @@ import {
   Cloud,
   Camera,
   MapPin,
-  RefreshCw,
+  ExternalLink,
   Sunrise,
   Sunset,
   Edit,
-  Lock,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import Hls from "hls.js";
 
 const NEW_ILALIM = {
   lat: 14.8345,
@@ -140,7 +138,6 @@ export default function WeatherWaterPage() {
   const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
   const [editAnnouncementText, setEditAnnouncementText] = useState("");
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
-  const [cameraLoading, setCameraLoading] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchWeather = async (retry = 0, showLoading = true) => {
@@ -239,68 +236,6 @@ export default function WeatherWaterPage() {
     };
   }, [refetchData]);
 
-  useEffect(() => {
-    const video = document.getElementById("camera-video") as HTMLVideoElement | null;
-    if (!video) return;
-
-    const streamUrl = `https://portion-aliens-spring.ngrok-free.dev/hls/index.m3u8`;
-    let hls: Hls | null = null;
-
-    const onCanPlay = () => setCameraLoading(false);
-    const onWaiting = () => setCameraLoading(true);
-    const onError = () => setCameraLoading(false);
-
-    video.addEventListener("canplay", onCanPlay);
-    video.addEventListener("waiting", onWaiting);
-    video.addEventListener("error", onError);
-
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        maxBufferLength: 30,
-        liveSyncDurationCount: 3,
-      });
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.ERROR, (_event: string, data: any) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hls?.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls?.recoverMediaError();
-              break;
-            default:
-              break;
-          }
-        }
-      });
-    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = streamUrl;
-    } else {
-      setCameraLoading(false);
-      const parent = video.parentElement;
-      if (parent) {
-        const msg = document.createElement("p");
-        msg.className = "text-white/80 text-sm text-center";
-        msg.innerText = "HLS not supported in this browser.";
-        parent.appendChild(msg);
-      }
-      video.style.display = "none";
-    }
-
-    return () => {
-      if (hls) {
-        hls.destroy();
-      } else {
-        video.src = "";
-      }
-      video.removeEventListener("canplay", onCanPlay);
-      video.removeEventListener("waiting", onWaiting);
-      video.removeEventListener("error", onError);
-    };
-  }, []);
-
   const handleEditAnnouncement = () => {
     setEditAnnouncementText(announcement);
     setIsEditingAnnouncement(true);
@@ -345,6 +280,9 @@ export default function WeatherWaterPage() {
   const isOfficial = userRole === "official";
   const reserveWeatherCard = weatherLoading || refreshLoading;
 
+  // Camera link (provided by user)
+  const cameraLink = "https://portion-aliens-spring.ngrok-free.dev/hls/index.m3u8";
+
   return (
     <motion.div
       initial="hidden"
@@ -353,34 +291,36 @@ export default function WeatherWaterPage() {
       className="h-auto xl:h-full xl:min-h-0 relative p-5"
     >
       <div className="grid grid-cols-1 gap-4 xl:h-full xl:min-h-0 xl:grid-cols-[minmax(300px,0.95fr)_minmax(380px,1.05fr)] xl:items-stretch">
+        {/* Camera Card - now with a link instead of video */}
         <motion.div variants={fadeInUp} className="flex min-h-[280px] flex-col rounded-xl bg-gradient-to-br from-blue-900 to-blue-950 p-4 text-white shadow-lg sm:min-h-[320px] sm:p-5 xl:h-full xl:min-h-0 xl:p-4">
           <div className="mb-3 flex items-center gap-2 xl:mb-2">
             <Camera size={20} />
             <h2 className="text-base font-semibold sm:text-lg xl:text-base">
-              Live Water Level Camera
+              Riverbank Camera
             </h2>
           </div>
           <div className="relative flex flex-1 flex-col items-center justify-center rounded-lg border border-white/15 bg-white/10 p-4 xl:min-h-0 xl:p-3">
-            {cameraLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-md">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-white border-t-transparent" />
-              </div>
-            )}
-            <video
-              id="camera-video"
-              controls
-              autoPlay
-              muted
-              playsInline
-              className="h-full w-full rounded-md object-cover"
-              style={{ maxHeight: "100%", maxWidth: "100%" }}
-            />
+            <ExternalLink size={48} className="mb-3 text-white/70" />
+            <p className="mb-3 text-center text-sm text-white/80">
+              Click the button below to view the live riverbank camera.
+            </p>
+            <a
+              href={cameraLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              <Camera size={16} />
+              Access Riverbank Camera
+              <ExternalLink size={14} />
+            </a>
+            <p className="mt-3 text-[10px] text-white/45 sm:text-xs">
+              Stream provided by Brgy. New Ilalim
+            </p>
           </div>
-          <p className="mt-3 text-[10px] text-white/45 sm:text-xs xl:mt-2">
-            Live feed from Brgy. New Ilalim
-          </p>
         </motion.div>
 
+        {/* Weather Card (unchanged) */}
         <motion.div
           variants={fadeInUp}
           className={`relative overflow-hidden rounded-xl shadow-lg xl:h-full xl:min-h-0 ${
