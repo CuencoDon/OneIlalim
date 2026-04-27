@@ -243,7 +243,7 @@ export default function WeatherWaterPage() {
     const video = document.getElementById("camera-video") as HTMLVideoElement | null;
     if (!video) return;
 
-    const streamUrl = `http://${window.location.hostname}:8888/hls/index.m3u8`;
+    const streamUrl = `https://portion-aliens-spring.ngrok-free.dev/hls/index.m3u8`;
     let hls: Hls | null = null;
 
     const onCanPlay = () => setCameraLoading(false);
