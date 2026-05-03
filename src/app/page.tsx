@@ -289,7 +289,7 @@ export default function UnifiedMapPage() {
               </div>
               <h3 className="mb-2 text-center text-lg font-semibold text-blue-900">Locked</h3>
               <p className="text-center text-sm text-gray-700">
-                Sign up or log in to view and report disasters and evacuation sites.
+                POGI.
               </p>
             </motion.div>
           </motion.div>
