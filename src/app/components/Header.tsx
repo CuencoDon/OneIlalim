@@ -14,7 +14,7 @@ const HEADER_HEIGHT = 72;
 const MODAL_BACKDROP_CLASS = "fixed inset-0 bg-white/10 backdrop-blur-sm";
 
 export default function Header() {
-  const { user, userMeta, userRole, isLoading } = useAuth();
+  const { user, userMeta, userRole, roleDescription, isLoading } = useAuth();
   const [showAuth, setShowAuth] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showUserPopup, setShowUserPopup] = useState(false);
@@ -54,7 +54,14 @@ export default function Header() {
   };
 
   const fullName = `${userMeta?.first_name ?? ""} ${userMeta?.last_name ?? ""}`.trim();
-  const roleLabel = userRole === "official" ? "Barangay Official" : "Resident";
+
+  const roleLabel =
+    userRole === "official"
+      ? "Barangay Official"
+      : userRole === "responder"
+      ? "Responder"
+      : "Resident";
+
   const userEmail = (userMeta as any)?.email;
   const userPhone = (userMeta as any)?.contact_number;
 
@@ -67,6 +74,11 @@ export default function Header() {
         { href: "/history", label: "History", icon: History },
         { href: "/inventory", label: "Inventory", icon: Package },
       ];
+    } else if (userRole === "responder") {
+      return [
+        { href: "/", label: "Map", icon: Map },
+        { href: "#", label: "User", icon: User, isUser: true },
+      ];
     } else {
       return [
         { href: "/", label: "Map", icon: Map },
@@ -74,7 +86,7 @@ export default function Header() {
         { href: "/camera", label: "Camera", icon: Camera },
       ];
     }
-  }, [userRole]);
+  }, [userRole, roleDescription]);
 
   const headerContentVariants = {
     hidden: { opacity: 0, y: -10 },
@@ -88,7 +100,6 @@ export default function Header() {
   };
 
   if (!mounted) return null;
-
   if (isLoading) return null;
 
   const isLoggedOut = !user;
@@ -223,8 +234,13 @@ export default function Header() {
                 <X size={18} />
               </button>
               <div className="flex flex-col items-center text-center">
-                <h3 className="text-lg font-semibold text-blue-900">{fullName || "User"}</h3>
+                <h3 className="text-lg font-semibold text-blue-900">
+                  {fullName || "User"}
+                </h3>
                 <p className="text-sm text-gray-600 mt-1">{roleLabel}</p>
+                {roleDescription && (
+                  <p className="text-sm text-gray-600">{roleDescription}</p>
+                )}
                 <div className="w-full border-t border-gray-100 my-4" />
                 <div className="space-y-2 w-full">
                   {userEmail && (

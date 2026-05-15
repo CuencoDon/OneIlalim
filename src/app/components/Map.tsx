@@ -15,7 +15,22 @@ import { disasterIcons, evacuationSiteAvailable, evacuationSiteFull } from "@/ap
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, CheckCircle2, Clock, Phone, AlertTriangle, Flame, Car, Waves, Trash2, Building2, XCircle, Pencil, MapPin, Volume2, VolumeX } from "lucide-react";
+import {
+  User,
+  CheckCircle2,
+  Clock,
+  Phone,
+  AlertTriangle,
+  Flame,
+  Car,
+  Waves,
+  Building2,
+  XCircle,
+  Pencil,
+  VolumeX,
+  Archive,
+  RefreshCw,
+} from "lucide-react";
 import ActionPanel from "@/app/components/ActionPanel";
 
 type DisasterType = "fire" | "accident" | "flood" | "hazard";
@@ -29,10 +44,13 @@ type Disaster = {
   description: string | null;
   full_name: string;
   contact_number: string | null;
-  status: "active" | "resolved";
+  status: "active" | "responding" | "resolved" | "archived";
   reported_at: string;
   resolved_at: string | null;
   resolved_by: string | null;
+  archived_by?: string | null;
+  responded_by?: string | null;
+  responded_at?: string | null;
 };
 
 type EvacuationSite = {
@@ -55,11 +73,44 @@ const BOUNDARY = {
 const DEFAULT_CENTER: [number, number] = [14.8345, 120.2788];
 const DEFAULT_ZOOM = 18;
 
-const DISASTER_TYPE_CONFIG: Record<DisasterType, { label: string; badge: string; icon: React.ElementType; soundFile: string; flashColor: string }> = {
-  fire: { label: "Fire", badge: "bg-red-600", icon: Flame, soundFile: "/fire.mp3", flashColor: "rgba(255, 0, 0, 0.4)" },
-  accident: { label: "Accident", badge: "bg-orange-500", icon: Car, soundFile: "/accident.mp3", flashColor: "rgba(255, 165, 0, 0.4)" },
-  flood: { label: "Flood", badge: "bg-blue-600", icon: Waves, soundFile: "/flood.mp3", flashColor: "rgba(0, 0, 255, 0.4)" },
-  hazard: { label: "Hazard", badge: "bg-yellow-500", icon: AlertTriangle, soundFile: "/hazard.mp3", flashColor: "rgba(255, 255, 0, 0.4)" },
+const DISASTER_TYPE_CONFIG: Record<
+  DisasterType,
+  {
+    label: string;
+    badge: string;
+    icon: React.ElementType;
+    soundFile: string;
+    flashColor: string;
+  }
+> = {
+  fire: {
+    label: "Fire",
+    badge: "bg-red-600",
+    icon: Flame,
+    soundFile: "/fire.mp3",
+    flashColor: "rgba(255, 0, 0, 0.4)",
+  },
+  accident: {
+    label: "Accident",
+    badge: "bg-orange-500",
+    icon: Car,
+    soundFile: "/accident.mp3",
+    flashColor: "rgba(255, 165, 0, 0.4)",
+  },
+  flood: {
+    label: "Flood",
+    badge: "bg-blue-600",
+    icon: Waves,
+    soundFile: "/flood.mp3",
+    flashColor: "rgba(0, 0, 255, 0.4)",
+  },
+  hazard: {
+    label: "Hazard",
+    badge: "bg-yellow-500",
+    icon: AlertTriangle,
+    soundFile: "/hazard.mp3",
+    flashColor: "rgba(255, 255, 0, 0.4)",
+  },
 };
 
 const customHazardIcon = L.divIcon({
@@ -76,8 +127,10 @@ const customHazardIcon = L.divIcon({
 });
 
 const isWithinBoundary = (lat: number, lng: number) =>
-  lat >= BOUNDARY.lat.min && lat <= BOUNDARY.lat.max &&
-  lng >= BOUNDARY.lng.min && lng <= BOUNDARY.lng.max;
+  lat >= BOUNDARY.lat.min &&
+  lat <= BOUNDARY.lat.max &&
+  lng >= BOUNDARY.lng.min &&
+  lng <= BOUNDARY.lng.max;
 
 const userLocationIcon = L.divIcon({
   html: `<div style="background-color: #1e3a8a; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;">
@@ -106,7 +159,9 @@ function BoundaryLayer() {
     }).addTo(map);
     map.fitBounds(bounds, { padding: [20, 20] });
     map.setMaxBounds(bounds.pad(0.2));
-    return () => { map.removeLayer(rectangle); };
+    return () => {
+      map.removeLayer(rectangle);
+    };
   }, [map]);
   return null;
 }
@@ -144,7 +199,11 @@ function CustomRoutingControl({
   const polylineRef = useRef<L.Polyline | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const distanceToSegment = (p: [number, number], a: [number, number], b: [number, number]) => {
+  const distanceToSegment = (
+    p: [number, number],
+    a: [number, number],
+    b: [number, number]
+  ) => {
     const [x, y] = p;
     const [x1, y1] = a;
     const [x2, y2] = b;
@@ -163,7 +222,12 @@ function CustomRoutingControl({
     return Math.hypot(x - projX, y - projY);
   };
 
-  const offsetPoint = (lat: number, lng: number, direction: [number, number], distance: number) => {
+  const offsetPoint = (
+    lat: number,
+    lng: number,
+    direction: [number, number],
+    distance: number
+  ) => {
     const [dx, dy] = direction;
     const norm = Math.hypot(dx, dy);
     if (norm === 0) return [lat, lng];
@@ -174,35 +238,30 @@ function CustomRoutingControl({
 
   useEffect(() => {
     if (!map || !userLocation || !destination) return;
-
     let active = true;
 
     const fetchRoute = async (): Promise<void> => {
       if (!active) return;
-
       if (abortControllerRef.current) abortControllerRef.current.abort();
       abortControllerRef.current = new AbortController();
-
       let coords = `${userLocation[1]},${userLocation[0]};${destination[1]},${destination[0]}`;
       const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-
       try {
-        const response = await fetch(url, { signal: abortControllerRef.current.signal });
+        const response = await fetch(url, {
+          signal: abortControllerRef.current.signal,
+        });
         const data = await response.json();
         if (!data.routes || data.routes.length === 0) return;
-
         const route = data.routes[0];
         const coordinates = route.geometry.coordinates.map(
           ([lng, lat]: [number, number]) => [lat, lng] as [number, number]
         );
-
-        const activeDisasters = disasters.filter(d => d.status === "active");
+        const activeDisasters = disasters.filter((d) => d.status === "active");
         const THRESHOLD = 0.0003;
         const OFFSET = 0.0006;
         let foundAny = false;
         const avoidedDisasters = new Set<string>();
         const newWaypoints: [number, number][] = [];
-
         for (let i = 0; i < coordinates.length - 1; i++) {
           const a = coordinates[i];
           const b = coordinates[i + 1];
@@ -210,17 +269,25 @@ function CustomRoutingControl({
           const dy = b[1] - a[1];
           for (const disaster of activeDisasters) {
             if (avoidedDisasters.has(disaster.id)) continue;
-            const dist = distanceToSegment([disaster.lat, disaster.lng], a, b);
+            const dist = distanceToSegment(
+              [disaster.lat, disaster.lng],
+              a,
+              b
+            );
             if (dist < THRESHOLD) {
               foundAny = true;
               avoidedDisasters.add(disaster.id);
               const direction: [number, number] = [dx, dy];
-              const [offLat, offLng] = offsetPoint(disaster.lat, disaster.lng, direction, OFFSET);
+              const [offLat, offLng] = offsetPoint(
+                disaster.lat,
+                disaster.lng,
+                direction,
+                OFFSET
+              );
               newWaypoints.push([offLat, offLng]);
             }
           }
         }
-
         let finalCoordinates = coordinates;
         if (foundAny && newWaypoints.length > 0 && newWaypoints.length <= 10) {
           let detourCoords = `${userLocation[1]},${userLocation[0]}`;
@@ -229,7 +296,9 @@ function CustomRoutingControl({
           }
           detourCoords += `;${destination[1]},${destination[0]}`;
           const detourUrl = `https://router.project-osrm.org/route/v1/driving/${detourCoords}?overview=full&geometries=geojson`;
-          const detourResponse = await fetch(detourUrl, { signal: abortControllerRef.current.signal });
+          const detourResponse = await fetch(detourUrl, {
+            signal: abortControllerRef.current.signal,
+          });
           const detourData = await detourResponse.json();
           if (detourData.routes && detourData.routes.length > 0) {
             finalCoordinates = detourData.routes[0].geometry.coordinates.map(
@@ -237,15 +306,15 @@ function CustomRoutingControl({
             );
           }
         }
-
         if (polylineRef.current) polylineRef.current.remove();
         polylineRef.current = L.polyline(finalCoordinates, {
           color: "#10b981",
           weight: 5,
           opacity: 0.8,
         }).addTo(map);
-
-        map.fitBounds(L.polyline(finalCoordinates).getBounds(), { padding: [50, 50] });
+        map.fitBounds(L.polyline(finalCoordinates).getBounds(), {
+          padding: [50, 50],
+        });
       } catch (error) {
         if (!(error instanceof Error && error.name === "AbortError")) {
           console.error("Routing error:", error);
@@ -254,7 +323,6 @@ function CustomRoutingControl({
     };
 
     fetchRoute();
-
     return () => {
       active = false;
       if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -281,16 +349,40 @@ function DisasterPopupContent({
   resolvedByNameMap: Record<string, string>;
 }) {
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (onFocus) onFocus(disaster.id);
   }, [disaster.id, onFocus]);
 
-  const handleResolve = async () => {
+  const handleRespond = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionError(null);
     setIsUpdating(true);
     try {
-      await supabase
+      const { error } = await supabase
+        .from("disasters")
+        .update({
+          status: "responding",
+          responded_by: user?.id,
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", disaster.id);
+      if (error) throw error;
+    } catch (err: any) {
+      console.error("Failed to respond:", err);
+      setActionError("Failed to respond: " + (err.message ?? "Unknown error"));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleResolve = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionError(null);
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase
         .from("disasters")
         .update({
           status: "resolved",
@@ -298,17 +390,33 @@ function DisasterPopupContent({
           resolved_by: user?.id,
         })
         .eq("id", disaster.id);
+      if (error) throw error;
+    } catch (err: any) {
+      console.error("Failed to resolve:", err);
+      setActionError("Failed to resolve: " + (err.message ?? "Unknown error"));
     } finally {
       setIsUpdating(false);
     }
   };
 
-  const handleDelete = async () => {
-    setIsDeleting(true);
+  const handleArchive = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActionError(null);
+    setIsUpdating(true);
     try {
-      await supabase.from("disasters").delete().eq("id", disaster.id);
+      const { error } = await supabase
+        .from("disasters")
+        .update({
+          status: "archived",
+          archived_by: user?.id,
+        })
+        .eq("id", disaster.id);
+      if (error) throw error;
+    } catch (err: any) {
+      console.error("Failed to archive:", err);
+      setActionError("Failed to archive: " + (err.message ?? "Unknown error"));
     } finally {
-      setIsDeleting(false);
+      setIsUpdating(false);
     }
   };
 
@@ -317,16 +425,16 @@ function DisasterPopupContent({
   const TypeIcon = typeConfig.icon;
 
   const isOfficial = role === "official";
+  const isResponder = role === "responder";
   const isReporter = disaster.user_id === user?.id;
 
-  const showResolveButton = isOfficial && disaster.status === "active";
-  const canDelete = isOfficial || (isReporter && disaster.status === "active");
-  const showDeleteButton = canDelete;
+  const showRespondButton = isResponder && disaster.status === "active";
+  const showResolveForResponder = isResponder && disaster.status === "responding";
+  const showOfficialButtons = isOfficial && (disaster.status === "active" || disaster.status === "responding");
+  const canArchive = isOfficial;
 
   const canSeeDetails =
-    role === "official" ||
-    isReporter ||
-    reporterRole === "official";
+    role === "official" || isReporter || reporterRole === "official";
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return null;
@@ -335,7 +443,9 @@ function DisasterPopupContent({
 
   const reportedTime = formatTime(disaster.reported_at);
   const resolvedTime = formatTime(disaster.resolved_at);
-  const resolverName = disaster.resolved_by ? resolvedByNameMap[disaster.resolved_by] : null;
+  const resolverName = disaster.resolved_by
+    ? resolvedByNameMap[disaster.resolved_by]
+    : null;
 
   return (
     <motion.div
@@ -345,17 +455,40 @@ function DisasterPopupContent({
       transition={{ duration: 0.2 }}
       className="relative font-sans text-center"
     >
-      {(isUpdating || isDeleting) && <div className="absolute inset-0 backdrop-blur-sm bg-white/30 z-10" />}
+      {isUpdating && (
+        <div className="absolute inset-0 backdrop-blur-sm bg-white/30 z-10" />
+      )}
       <div className="relative z-20 flex flex-col gap-1">
         <div className="flex flex-row flex-nowrap gap-1.5 justify-center">
           <span
-            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${disaster.status === "active"
+            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${
+              disaster.status === "active"
                 ? "bg-red-600 text-white"
-                : "bg-green-600 text-white"
-              }`}
+                : disaster.status === "responding"
+                ? "bg-blue-600 text-white"
+                : disaster.status === "resolved"
+                ? "bg-green-600 text-white"
+                : "bg-gray-600 text-white"
+            }`}
           >
-            {disaster.status === "active" ? <Clock className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
-            <span>{disaster.status === "active" ? "Active" : "Resolved"}</span>
+            {disaster.status === "active" ? (
+              <Clock className="w-3 h-3" />
+            ) : disaster.status === "responding" ? (
+              <RefreshCw className="w-3 h-3" />
+            ) : disaster.status === "resolved" ? (
+              <CheckCircle2 className="w-3 h-3" />
+            ) : (
+              <Archive className="w-3 h-3" />
+            )}
+            <span>
+              {disaster.status === "active"
+                ? "Active"
+                : disaster.status === "responding"
+                ? "Responding"
+                : disaster.status === "resolved"
+                ? "Resolved"
+                : "Archived"}
+            </span>
           </span>
 
           <span
@@ -367,16 +500,33 @@ function DisasterPopupContent({
 
           {reporterRole && (
             <span
-              className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${reporterRole === "official" ? "bg-blue-700 text-white" : "bg-gray-500 text-white"
-                }`}
+              className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${
+                reporterRole === "official"
+                  ? "bg-blue-700 text-white"
+                  : "bg-gray-500 text-white"
+              }`}
             >
               <User className="w-3 h-3" />
-              <span>{reporterRole === "official" ? "Brgy. Official" : "Resident"}</span>
+              <span>
+                {reporterRole === "official" ? "Brgy. Official" : "Resident"}
+              </span>
             </span>
+          )}
+
+          {(isOfficial || isResponder) && disaster.contact_number && (
+            <a
+              href={`tel:${disaster.contact_number}`}
+              className="flex items-center justify-center p-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full transition-colors"
+              title="Call Reporter"
+            >
+              <Phone className="w-3.5 h-3.5" />
+            </a>
           )}
         </div>
 
-        <div className="text-[10px] text-gray-600">Reported: {reportedTime}</div>
+        <div className="text-[10px] text-gray-600">
+          Reported: {reportedTime}
+        </div>
 
         {disaster.status === "resolved" && (
           <div className="text-[10px] text-gray-600">
@@ -394,22 +544,40 @@ function DisasterPopupContent({
           <div className="flex items-center justify-center gap-1 flex-wrap">
             <div className="flex items-center gap-1">
               <User className="w-3 h-3 text-black" />
-              <span className="text-xs font-medium text-black">{disaster.full_name}</span>
+              <span className="text-xs font-medium text-black">
+                {disaster.full_name}
+              </span>
             </div>
             {disaster.contact_number && (
               <>
                 <span className="text-xs text-black">•</span>
                 <div className="flex items-center gap-1">
                   <Phone className="w-3 h-3 text-black" />
-                  <span className="text-xs text-black">{disaster.contact_number}</span>
+                  <span className="text-xs text-black">
+                    {disaster.contact_number}
+                  </span>
                 </div>
               </>
             )}
           </div>
         )}
 
+        {actionError && (
+          <div className="text-[10px] text-red-600 text-center px-1 break-words">
+            {actionError}
+          </div>
+        )}
         <div className="flex justify-center gap-2 mt-0.5">
-          {showResolveButton && (
+          {showRespondButton && (
+            <button
+              onClick={handleRespond}
+              disabled={isUpdating}
+              className="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
+            >
+              {isUpdating ? "Updating..." : "Respond"}
+            </button>
+          )}
+          {showResolveForResponder && (
             <button
               onClick={handleResolve}
               disabled={isUpdating}
@@ -418,14 +586,23 @@ function DisasterPopupContent({
               {isUpdating ? "Resolving..." : "Resolve"}
             </button>
           )}
-          {showDeleteButton && (
-            <button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
-            </button>
+          {showOfficialButtons && (
+            <>
+              <button
+                onClick={handleResolve}
+                disabled={isUpdating}
+                className="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
+              >
+                {isUpdating ? "Resolving..." : "Resolve"}
+              </button>
+              <button
+                onClick={handleArchive}
+                disabled={isUpdating}
+                className="bg-gray-600 hover:bg-gray-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
+              >
+                {isUpdating ? "Archiving..." : "Archive"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -465,7 +642,9 @@ function EvacuationSitePopupContent({
     try {
       await supabase
         .from("evacuation_sites")
-        .update({ status: site.status === "available" ? "full" : "available" })
+        .update({
+          status: site.status === "available" ? "full" : "available",
+        })
         .eq("id", site.id);
     } finally {
       setIsUpdating(false);
@@ -531,15 +710,26 @@ function EvacuationSitePopupContent({
       transition={{ duration: 0.2 }}
       className="relative font-sans text-center"
     >
-      {(isUpdating || isDeleting) && <div className="absolute inset-0 backdrop-blur-sm bg-white/30 z-10" />}
+      {(isUpdating || isDeleting) && (
+        <div className="absolute inset-0 backdrop-blur-sm bg-white/30 z-10" />
+      )}
       <div className="relative z-20 flex flex-col gap-1">
         <div className="flex flex-row flex-nowrap gap-1.5 justify-center">
           <span
-            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${site.status === "available" ? "bg-green-600 text-white" : "bg-red-600 text-white"
-              }`}
+            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${
+              site.status === "available"
+                ? "bg-green-600 text-white"
+                : "bg-red-600 text-white"
+            }`}
           >
-            {site.status === "available" ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-            <span>{site.status === "available" ? "Available" : "Full"}</span>
+            {site.status === "available" ? (
+              <CheckCircle2 className="w-3 h-3" />
+            ) : (
+              <XCircle className="w-3 h-3" />
+            )}
+            <span>
+              {site.status === "available" ? "Available" : "Full"}
+            </span>
           </span>
 
           <span className="flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium bg-green-600 text-white">
@@ -548,7 +738,9 @@ function EvacuationSitePopupContent({
           </span>
         </div>
 
-        <div className="text-center font-semibold text-xs text-black break-words">{site.title}</div>
+        <div className="text-center font-semibold text-xs text-black break-words">
+          {site.title}
+        </div>
 
         <div className="relative pt-1">
           {isEditingDesc ? (
@@ -584,7 +776,9 @@ function EvacuationSitePopupContent({
                   {site.description}
                 </div>
               ) : (
-                <div className="text-[10px] text-gray-500 italic">No description</div>
+                <div className="text-[10px] text-gray-500 italic">
+                  No description
+                </div>
               )}
               {isOfficial && (
                 <button
@@ -598,19 +792,25 @@ function EvacuationSitePopupContent({
           )}
         </div>
 
-        <div className="text-[10px] text-gray-600">Added: {formatTime(site.created_at)}</div>
+        <div className="text-[10px] text-gray-600">
+          Added: {formatTime(site.created_at)}
+        </div>
 
         <div className="flex items-center justify-center gap-1">
           <div className="flex items-center gap-1">
             <User className="w-3 h-3 text-black" />
-            <span className="text-xs font-medium text-black">{site.official_name}</span>
+            <span className="text-xs font-medium text-black">
+              {site.official_name}
+            </span>
           </div>
           {officialPhoneMap[site.official_id] && (
             <>
               <span className="text-xs text-black">•</span>
               <div className="flex items-center gap-1">
                 <Phone className="w-3 h-3 text-black" />
-                <span className="text-xs text-black">{officialPhoneMap[site.official_id]}</span>
+                <span className="text-xs text-black">
+                  {officialPhoneMap[site.official_id]}
+                </span>
               </div>
             </>
           )}
@@ -628,10 +828,17 @@ function EvacuationSitePopupContent({
             <button
               onClick={handleStatusToggle}
               disabled={isUpdating}
-              className={`${site.status === "available" ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
-                } text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors`}
+              className={`${
+                site.status === "available"
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-green-600 hover:bg-green-700"
+              } text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors`}
             >
-              {isUpdating ? "Updating..." : site.status === "available" ? "Mark Full" : "Mark Available"}
+              {isUpdating
+                ? "Updating..."
+                : site.status === "available"
+                ? "Mark Full"
+                : "Mark Available"}
             </button>
           )}
           {canDelete && (
@@ -675,13 +882,16 @@ export default function Map({
   reporterRoleMap?: Record<string, string>;
   resolvedByNameMap?: Record<string, string>;
   officialPhoneMap?: Record<string, string>;
-  onUpdateEvacuationDescription?: (id: string, newDescription: string) => Promise<void>;
+  onUpdateEvacuationDescription?: (
+    id: string,
+    newDescription: string
+  ) => Promise<void>;
   readOnly?: boolean;
 }) {
   const router = useRouter();
-
   const user = currentUser;
   const role = currentUserRole;
+  const isResponder = role === "responder";
 
   const [localDisasters, setLocalDisasters] = useState<Disaster[]>(disasters);
 
@@ -692,7 +902,9 @@ export default function Map({
         .select("*")
         .order("reported_at", { ascending: false });
       if (!error && data) {
-        setLocalDisasters(data);
+        setLocalDisasters(
+          data.filter((d: Disaster) => d.status !== "archived")
+        );
       }
     };
     fetchDisasters();
@@ -700,20 +912,41 @@ export default function Map({
 
   useEffect(() => {
     const channel = supabase
-      .channel('disasters-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'disasters' }, (payload) => {
-        const newDisaster = payload.new as Disaster;
-        setLocalDisasters((prev) => [newDisaster, ...prev]);
-        startAlert(newDisaster);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'disasters' }, (payload) => {
-        setLocalDisasters((prev) =>
-          prev.map((d) => (d.id === payload.new.id ? (payload.new as Disaster) : d))
-        );
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'disasters' }, (payload) => {
-        setLocalDisasters((prev) => prev.filter((d) => d.id !== payload.old.id));
-      })
+      .channel("disasters-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "disasters" },
+        (payload) => {
+          const newDisaster = payload.new as Disaster;
+          if (newDisaster.status !== "archived") {
+            setLocalDisasters((prev) => [newDisaster, ...prev]);
+            startAlert(newDisaster);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "disasters" },
+        (payload) => {
+          const updated = payload.new as Disaster;
+          if (updated.status === "archived") {
+            setLocalDisasters((prev) => prev.filter((d) => d.id !== updated.id));
+          } else {
+            setLocalDisasters((prev) =>
+              prev.map((d) => (d.id === updated.id ? updated : d))
+            );
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "disasters" },
+        (payload) => {
+          setLocalDisasters((prev) =>
+            prev.filter((d) => d.id !== payload.old.id)
+          );
+        }
+      )
       .subscribe();
 
     return () => {
@@ -721,15 +954,25 @@ export default function Map({
     };
   }, []);
 
-  const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">("disaster");
-  const [locationMode, setLocationMode] = useState<"current" | "pick">("current");
-  const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
-  const [pickedLocation, setPickedLocation] = useState<[number, number] | null>(null);
+  const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">(
+    "disaster"
+  );
+  const [locationMode, setLocationMode] = useState<"current" | "pick">(
+    "current"
+  );
+  const [currentLocation, setCurrentLocation] = useState<
+    [number, number] | null
+  >(null);
+  const [pickedLocation, setPickedLocation] = useState<
+    [number, number] | null
+  >(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBoundaryError, setShowBoundaryError] = useState(false);
-  const [routingDestination, setRoutingDestination] = useState<[number, number] | null>(null);
+  const [routingDestination, setRoutingDestination] = useState<
+    [number, number] | null
+  >(null);
 
   const [alertActive, setAlertActive] = useState(false);
   const [alertDisasterId, setAlertDisasterId] = useState<string | null>(null);
@@ -742,6 +985,16 @@ export default function Map({
   const manuallyClosedDisaster = useRef(false);
   const manuallyClosedEvac = useRef(false);
   const initialRequestDone = useRef(false);
+
+  // --- Responder: no location tracking ---
+  useEffect(() => {
+    if (isResponder) {
+      setCurrentLocation(null);
+      setPickedLocation(null);
+      setLocationError(null);
+      setIsGettingLocation(false);
+    }
+  }, [isResponder]);
 
   const focusedDisasterObj = useMemo(
     () => localDisasters.find((d) => focusDisaster?.id === d.id),
@@ -771,6 +1024,7 @@ export default function Map({
   }, [focusEvacuationSite, readOnly]);
 
   const requestDeviceLocation = useCallback(() => {
+    if (isResponder) return; // responders do not need location
     if (!navigator.geolocation) {
       setLocationError("Geolocation not supported");
       return;
@@ -789,134 +1043,162 @@ export default function Map({
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
-  }, []);
+  }, [isResponder]);
 
   useEffect(() => {
-    if (!initialRequestDone.current && locationMode === "current") {
+    if (!initialRequestDone.current && locationMode === "current" && !isResponder) {
       initialRequestDone.current = true;
       requestDeviceLocation();
     }
-  }, [locationMode, requestDeviceLocation]);
+  }, [locationMode, requestDeviceLocation, isResponder]);
 
-  const handleLocationModeChange = useCallback((mode: "current" | "pick") => {
-    setLocationMode(mode);
-    if (mode === "current") {
-      if (!currentLocation && !isGettingLocation) {
-        requestDeviceLocation();
+  const handleLocationModeChange = useCallback(
+    (mode: "current" | "pick") => {
+      setLocationMode(mode);
+      if (mode === "current" && !isResponder) {
+        if (!currentLocation && !isGettingLocation) {
+          requestDeviceLocation();
+        }
       }
-    }
-  }, [currentLocation, isGettingLocation, requestDeviceLocation]);
+    },
+    [currentLocation, isGettingLocation, requestDeviceLocation, isResponder]
+  );
 
   const handleMapPick = (lat: number, lng: number) => {
-    if (locationMode === "pick") {
+    if (locationMode === "pick" && !isResponder) {
       setPickedLocation([lat, lng]);
     }
   };
 
-  const handleBoundaryError = useCallback(() => setShowBoundaryError(true), []);
+  const handleBoundaryError = useCallback(
+    () => setShowBoundaryError(true),
+    []
+  );
 
-  const submitDisasterReport = useCallback(async (type: DisasterType, location: [number, number], description?: string) => {
-    if (!user) return;
+  const submitDisasterReport = useCallback(
+    async (
+      type: DisasterType,
+      location: [number, number],
+      description?: string
+    ) => {
+      if (!user) return;
+      if (!isWithinBoundary(location[0], location[1])) {
+        setShowBoundaryError(true);
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("first_name, last_name, contact_number, role")
+          .eq("id", user.id)
+          .single();
+        if (!profile) return;
+        await supabase.from("disasters").insert({
+          user_id: user.id,
+          full_name: `${profile.first_name} ${profile.last_name}`,
+          contact_number: profile.contact_number ?? null,
+          lat: location[0],
+          lng: location[1],
+          type,
+          description: type === "hazard" ? description : null,
+          status: "active",
+        });
+        if (locationMode === "pick") setPickedLocation(null);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [user, locationMode]
+  );
 
-    if (!isWithinBoundary(location[0], location[1])) {
-      setShowBoundaryError(true);
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("first_name, last_name, contact_number, role")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile) return;
-
-      await supabase.from("disasters").insert({
-        user_id: user.id,
-        full_name: `${profile.first_name} ${profile.last_name}`,
-        contact_number: profile.contact_number ?? null,
-        lat: location[0],
-        lng: location[1],
-        type,
-        description: type === "hazard" ? description : null,
-        status: "active",
-      });
-
-      if (locationMode === "pick") setPickedLocation(null);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [user, locationMode]);
-
-  const submitEvacuationSite = useCallback(async (location: [number, number], title: string, description?: string) => {
-    if (!user) return;
-
-    if (!isWithinBoundary(location[0], location[1])) {
-      setShowBoundaryError(true);
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("first_name, last_name")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile) return;
-
-      await supabase.from("evacuation_sites").insert({
-        official_id: user.id,
-        official_name: `${profile.first_name} ${profile.last_name}`.trim(),
-        lat: location[0],
-        lng: location[1],
-        title: title,
-        description: description || null,
-        status: "available",
-      });
-
-      if (locationMode === "pick") setPickedLocation(null);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [user, locationMode]);
+  const submitEvacuationSite = useCallback(
+    async (
+      location: [number, number],
+      title: string,
+      description?: string
+    ) => {
+      if (!user) return;
+      if (!isWithinBoundary(location[0], location[1])) {
+        setShowBoundaryError(true);
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("first_name, last_name")
+          .eq("id", user.id)
+          .single();
+        if (!profile) return;
+        await supabase.from("evacuation_sites").insert({
+          official_id: user.id,
+          official_name: `${profile.first_name} ${profile.last_name}`.trim(),
+          lat: location[0],
+          lng: location[1],
+          title: title,
+          description: description || null,
+          status: "available",
+        });
+        if (locationMode === "pick") setPickedLocation(null);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [user, locationMode]
+  );
 
   const getDisasterIcon = (disaster: Disaster) => {
     if (disaster.status === "resolved") return disasterIcons.resolved;
+    if (disaster.status === "archived") return disasterIcons.resolved;
     if (disaster.type === "hazard") return customHazardIcon;
     switch (disaster.type) {
-      case "fire": return disasterIcons.fire;
-      case "accident": return disasterIcons.accident;
-      case "flood": return disasterIcons.flood;
-      default: return disasterIcons.default;
+      case "fire":
+        return disasterIcons.fire;
+      case "accident":
+        return disasterIcons.accident;
+      case "flood":
+        return disasterIcons.flood;
+      default:
+        return disasterIcons.default;
     }
   };
 
   const getEvacuationIcon = (site: EvacuationSite) => {
-    return site.status === "available" ? evacuationSiteAvailable : evacuationSiteFull;
+    return site.status === "available"
+      ? evacuationSiteAvailable
+      : evacuationSiteFull;
   };
 
-  const routingUserLocation = locationMode === "current" ? currentLocation : pickedLocation;
+  const routingUserLocation =
+    locationMode === "current" ? currentLocation : pickedLocation;
 
-  const handleRequestRoute = useCallback((site: EvacuationSite) => {
-    setRoutingDestination([site.lat, site.lng]);
-    evacMarkersRef.current[site.id]?.closePopup();
-    onFocusEvacuationSite?.("");
-  }, [onFocusEvacuationSite]);
+  const handleRequestRoute = useCallback(
+    (site: EvacuationSite) => {
+      setRoutingDestination([site.lat, site.lng]);
+      evacMarkersRef.current[site.id]?.closePopup();
+      onFocusEvacuationSite?.("");
+    },
+    [onFocusEvacuationSite]
+  );
 
-  const handleEvacMarkerClick = useCallback((site: EvacuationSite) => {
-    if (readOnly) {
-      router.push(`/evacuation?id=${site.id}`);
-    } else {
-      if (routingDestination && routingDestination[0] === site.lat && routingDestination[1] === site.lng) {
-        setRoutingDestination(null);
+  const handleEvacMarkerClick = useCallback(
+    (site: EvacuationSite) => {
+      if (readOnly) {
+        router.push(`/evacuation?id=${site.id}`);
+      } else {
+        if (
+          routingDestination &&
+          routingDestination[0] === site.lat &&
+          routingDestination[1] === site.lng
+        ) {
+          setRoutingDestination(null);
+        }
+        onFocusEvacuationSite?.(site.id);
       }
-      onFocusEvacuationSite?.(site.id);
-    }
-  }, [readOnly, router, onFocusEvacuationSite, routingDestination]);
+    },
+    [readOnly, router, onFocusEvacuationSite, routingDestination]
+  );
 
   useEffect(() => {
     if (!routingUserLocation) {
@@ -944,57 +1226,60 @@ export default function Map({
     localStorage.removeItem("alertActive");
   }, []);
 
-  const startAlert = useCallback((disaster: Disaster) => {
-    const dismissed = localStorage.getItem(`dismissedAlert_${disaster.id}`);
-    if (dismissed === "true") return;
-    if (alertActive && alertDisasterId === disaster.id) return;
+  const startAlert = useCallback(
+    (disaster: Disaster) => {
+      const dismissed = localStorage.getItem(`dismissedAlert_${disaster.id}`);
+      if (dismissed === "true") return;
+      if (alertActive && alertDisasterId === disaster.id) return;
 
-    stopAlert();
-
-    const config = DISASTER_TYPE_CONFIG[disaster.type];
-    if (!config) return;
-
-    const ALERT_DURATION_MS = 5 * 60 * 1000;
-    const reportedAt = new Date(disaster.reported_at).getTime();
-    const now = Date.now();
-    let remaining = ALERT_DURATION_MS - (now - reportedAt);
-    if (remaining <= 0) return;
-
-    const overlay = document.createElement("div");
-    overlay.style.position = "fixed";
-    overlay.style.top = "0";
-    overlay.style.left = "0";
-    overlay.style.width = "100%";
-    overlay.style.height = "100%";
-    overlay.style.pointerEvents = "none";
-    overlay.style.zIndex = "9998";
-    overlay.style.backgroundColor = "transparent";
-    overlay.style.animation = `flash-${disaster.type} 0.5s infinite`;
-    document.body.appendChild(overlay);
-    flashOverlayRef.current = overlay;
-
-    const audio = new Audio(config.soundFile);
-    audioRef.current = audio;
-    audio.play().catch(e => console.log("Audio play failed:", e));
-
-    alertTimeoutRef.current = setTimeout(() => {
       stopAlert();
-    }, remaining);
 
-    setAlertActive(true);
-    setAlertDisasterId(disaster.id);
+      const config = DISASTER_TYPE_CONFIG[disaster.type];
+      if (!config) return;
 
-    localStorage.setItem("activeDisasterId", disaster.id);
-    localStorage.setItem("alertActive", "true");
+      const ALERT_DURATION_MS = 5 * 60 * 1000;
+      const reportedAt = new Date(disaster.reported_at).getTime();
+      const now = Date.now();
+      let remaining = ALERT_DURATION_MS - (now - reportedAt);
+      if (remaining <= 0) return;
 
-    if (onFocusDisaster) onFocusDisaster(disaster.id);
-    setTimeout(() => {
-      disasterMarkersRef.current[disaster.id]?.openPopup();
-    }, 500);
-  }, [stopAlert, onFocusDisaster, alertActive, alertDisasterId]);
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.top = "0";
+      overlay.style.left = "0";
+      overlay.style.width = "100%";
+      overlay.style.height = "100%";
+      overlay.style.pointerEvents = "none";
+      overlay.style.zIndex = "9998";
+      overlay.style.backgroundColor = "transparent";
+      overlay.style.animation = `flash-${disaster.type} 0.5s infinite`;
+      document.body.appendChild(overlay);
+      flashOverlayRef.current = overlay;
+
+      const audio = new Audio(config.soundFile);
+      audioRef.current = audio;
+      audio.play().catch((e) => console.log("Audio play failed:", e));
+
+      alertTimeoutRef.current = setTimeout(() => {
+        stopAlert();
+      }, remaining);
+
+      setAlertActive(true);
+      setAlertDisasterId(disaster.id);
+
+      localStorage.setItem("activeDisasterId", disaster.id);
+      localStorage.setItem("alertActive", "true");
+
+      if (onFocusDisaster) onFocusDisaster(disaster.id);
+      setTimeout(() => {
+        disasterMarkersRef.current[disaster.id]?.openPopup();
+      }, 500);
+    },
+    [stopAlert, onFocusDisaster, alertActive, alertDisasterId]
+  );
 
   useEffect(() => {
-    const activeDisaster = localDisasters.find(d => d.status === "active");
+    const activeDisaster = localDisasters.find((d) => d.status === "active");
     if (activeDisaster) {
       startAlert(activeDisaster);
     } else {
@@ -1006,7 +1291,7 @@ export default function Map({
     const storedDisasterId = localStorage.getItem("activeDisasterId");
     const storedAlertActive = localStorage.getItem("alertActive");
     if (storedDisasterId && storedAlertActive === "true") {
-      const disaster = localDisasters.find(d => d.id === storedDisasterId);
+      const disaster = localDisasters.find((d) => d.id === storedDisasterId);
       if (disaster) {
         startAlert(disaster);
       } else {
@@ -1030,7 +1315,7 @@ export default function Map({
   };
 
   useEffect(() => {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.textContent = `
       @keyframes flash-fire {
         0% { background-color: transparent; }
@@ -1085,20 +1370,20 @@ export default function Map({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {!readOnly && locationMode === "pick" && (
+        {!readOnly && locationMode === "pick" && !isResponder && (
           <ClickToPickLocation
             onPick={(lat, lng) => handleMapPick(lat, lng)}
             onBoundaryError={handleBoundaryError}
           />
         )}
 
-        {!readOnly && locationMode === "pick" && pickedLocation && (
+        {!readOnly && locationMode === "pick" && pickedLocation && !isResponder && (
           <Marker position={pickedLocation} icon={userLocationIcon}>
             <Popup>Pinned location.</Popup>
           </Marker>
         )}
 
-        {!readOnly && locationMode === "current" && currentLocation && (
+        {!readOnly && locationMode === "current" && currentLocation && !isResponder && (
           <Marker position={currentLocation} icon={userLocationIcon}>
             <Popup>Your current location.</Popup>
           </Marker>
@@ -1137,8 +1422,13 @@ export default function Map({
                       x: popupCenterX - mapRect.left,
                       y: popupCenterY - mapRect.top,
                     };
-                    const targetLatLng = map.containerPointToLatLng([point.x, point.y]);
-                    map.flyTo(targetLatLng, map.getZoom(), { duration: 0.8 });
+                    const targetLatLng = map.containerPointToLatLng([
+                      point.x,
+                      point.y,
+                    ]);
+                    map.flyTo(targetLatLng, map.getZoom(), {
+                      duration: 0.8,
+                    });
                   }, 10);
                 },
                 popupclose: () => {
@@ -1188,8 +1478,13 @@ export default function Map({
                       x: popupCenterX - mapRect.left,
                       y: popupCenterY - mapRect.top,
                     };
-                    const targetLatLng = map.containerPointToLatLng([point.x, point.y]);
-                    map.flyTo(targetLatLng, map.getZoom(), { duration: 0.8 });
+                    const targetLatLng = map.containerPointToLatLng([
+                      point.x,
+                      point.y,
+                    ]);
+                    map.flyTo(targetLatLng, map.getZoom(), {
+                      duration: 0.8,
+                    });
                   }, 10);
                 },
                 popupclose: () => {
@@ -1209,7 +1504,10 @@ export default function Map({
                 user={user}
                 onFocus={onFocusEvacuationSite}
                 officialPhoneMap={officialPhoneMap}
-                onUpdateDescription={onUpdateEvacuationDescription || (() => Promise.resolve())}
+                onUpdateDescription={
+                  onUpdateEvacuationDescription ||
+                  (() => Promise.resolve())
+                }
                 onRequestRoute={handleRequestRoute}
               />
             </Popup>
@@ -1244,7 +1542,8 @@ export default function Map({
                 Outside Service Area
               </h3>
               <p className="mb-6 text-center text-sm text-gray-700">
-                Reports and evacuation sites are only accepted within New Ilalim, Olongapo City.
+                Reports and evacuation sites are only accepted within New
+                Ilalim, Olongapo City.
               </p>
               <button
                 onClick={() => setShowBoundaryError(false)}
@@ -1257,7 +1556,7 @@ export default function Map({
         )}
       </AnimatePresence>
 
-      {!readOnly && user && (
+      {!readOnly && user && currentUserRole !== "responder" && (
         <ActionPanel
           onReportDisaster={submitDisasterReport}
           onSubmitEvacuation={submitEvacuationSite}

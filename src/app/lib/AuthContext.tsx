@@ -24,6 +24,7 @@ type AuthContextType = {
   userMeta: UserMeta | null;
   isLoading: boolean;
   userRole: string | null;
+  roleDescription: string | null;
   tabVisible: boolean;
   triggerRefetch: () => void;
 };
@@ -35,27 +36,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userMeta, setUserMeta] = useState<UserMeta | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [roleDescription, setRoleDescription] = useState<string | null>(null);
   const [tabVisible, setTabVisible] = useState(true);
   const [refetchCounter, setRefetchCounter] = useState(0);
 
   const triggerRefetch = () => setRefetchCounter((prev) => prev + 1);
 
-  const fetchUserRole = useCallback(
+  const fetchUserProfile = useCallback(
     async (userId: string, fallbackRole?: string | null) => {
       try {
         const { data, error } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role, role_description")
           .eq("id", userId)
           .maybeSingle();
 
-        if (!error && data?.role) {
-          return data.role;
+        if (!error && data) {
+          return {
+            role: data.role ?? fallbackRole ?? null,
+            roleDescription: data.role_description ?? null,
+          };
         }
 
-        return fallbackRole ?? null;
+        return {
+          role: fallbackRole ?? null,
+          roleDescription: null,
+        };
       } catch {
-        return fallbackRole ?? null;
+        return {
+          role: fallbackRole ?? null,
+          roleDescription: null,
+        };
       }
     },
     []
@@ -74,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!sessionUser) {
         setUserRole(null);
+        setRoleDescription(null);
       }
     };
 
@@ -91,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setUserMeta(null);
         setUserRole(null);
+        setRoleDescription(null);
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -103,7 +116,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Important: do NOT await Supabase queries here.
       applySession(session);
     });
 
@@ -116,30 +128,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    const updateRole = async () => {
+    const updateProfile = async () => {
       if (!user) {
         setUserRole(null);
+        setRoleDescription(null);
         return;
       }
 
       const fallbackRole = (user.user_metadata?.role as string | undefined) ?? null;
 
-      // Set fallback immediately so nav does not freeze while waiting.
       setUserRole(fallbackRole);
+      setRoleDescription(null);
 
-      const role = await fetchUserRole(user.id, fallbackRole);
+      const { role, roleDescription: desc } = await fetchUserProfile(user.id, fallbackRole);
 
       if (isMounted) {
         setUserRole(role);
+        setRoleDescription(desc);
       }
     };
 
-    updateRole();
+    updateProfile();
 
     return () => {
       isMounted = false;
     };
-  }, [user?.id, refetchCounter, fetchUserRole]);
+  }, [user?.id, refetchCounter, fetchUserProfile]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -165,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userMeta,
         isLoading,
         userRole,
+        roleDescription,
         tabVisible,
         triggerRefetch,
       }}

@@ -22,6 +22,7 @@ const emptyForm = {
   confirmPassword: "",
   role: "resident",
   passcode: "",
+  roleDescription: "",
   agreedToTerms: false,
 };
 
@@ -143,8 +144,19 @@ export default function AuthModal({ onClose }: Props) {
         setLoading(false);
         return;
       }
+      if (form.role === "responder" && form.passcode !== "ResponderNEWILALIM@2026!") {
+        setError("Invalid responder passcode.");
+        setLoading(false);
+        return;
+      }
       if (form.role === "resident" && form.passcode !== "NewilalimRES@2026") {
         setError("Invalid resident passcode.");
+        setLoading(false);
+        return;
+      }
+
+      if ((form.role === "official" || form.role === "responder") && !form.roleDescription.trim()) {
+        setError("Please enter a role description (e.g., Kagawad, Fire Men).");
         setLoading(false);
         return;
       }
@@ -176,6 +188,7 @@ export default function AuthModal({ onClose }: Props) {
           contact_number: form.contactNumber,
           email: form.email,
           role: form.role,
+          role_description: (form.role === "official" || form.role === "responder") ? form.roleDescription.trim() : null,
         });
 
       if (profileError) throw profileError;
@@ -442,13 +455,30 @@ export default function AuthModal({ onClose }: Props) {
                             >
                               <option value="resident">Resident</option>
                               <option value="official">Barangay Official</option>
+                              <option value="responder">Responder</option>
                             </select>
+
+                            {(form.role === "official" || form.role === "responder") && (
+                              <input
+                                name="roleDescription"
+                                type="text"
+                                placeholder={form.role === "official" ? "e.g., Kagawad, Tanod" : "e.g., Fire Men, Rescue"}
+                                value={form.roleDescription}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-blue-400 focus:outline-none"
+                                disabled={loading}
+                              />
+                            )}
 
                             <input
                               name="passcode"
                               type="text"
                               placeholder={
-                                form.role === "official" ? "Official Passcode" : "Resident Passcode"
+                                form.role === "official"
+                                  ? "Official Passcode"
+                                  : form.role === "responder"
+                                  ? "Responder Passcode"
+                                  : "Resident Passcode"
                               }
                               value={form.passcode}
                               onChange={handleChange}
