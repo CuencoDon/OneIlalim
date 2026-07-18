@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { useData } from "@/app/lib/DataContext";
 import { X, Loader2 } from "lucide-react";
@@ -139,17 +139,21 @@ export default function AuthModal({ onClose }: Props) {
         return;
       }
 
-      if (form.role === "official" && form.passcode !== "OfficialNEWILALIM@2026!") {
+      const officialPasscode = process.env.NEXT_PUBLIC_OFFICIAL_PASSCODE || "";
+      const responderPasscode = process.env.NEXT_PUBLIC_RESPONDER_PASSCODE || "";
+      const residentPasscode = process.env.NEXT_PUBLIC_RESIDENT_PASSCODE || "";
+
+      if (form.role === "official" && form.passcode !== officialPasscode) {
         setError("Invalid barangay official passcode.");
         setLoading(false);
         return;
       }
-      if (form.role === "responder" && form.passcode !== "ResponderNEWILALIM@2026!") {
+      if (form.role === "responder" && form.passcode !== responderPasscode) {
         setError("Invalid responder passcode.");
         setLoading(false);
         return;
       }
-      if (form.role === "resident" && form.passcode !== "NewilalimRES@2026") {
+      if (form.role === "resident" && form.passcode !== residentPasscode) {
         setError("Invalid resident passcode.");
         setLoading(false);
         return;

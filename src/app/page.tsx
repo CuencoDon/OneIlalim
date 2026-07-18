@@ -15,10 +15,12 @@ import {
   User,
   Phone,
   Clock,
+  Map,
+  X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
-const Map = dynamic(() => import("@/app/components/Map"), { ssr: false });
+const MapComponent = dynamic(() => import("@/app/components/Map"), { ssr: false });
 
 type Disaster = {
   id: string;
@@ -73,8 +75,8 @@ export default function UnifiedMapPage() {
   const [officialPhoneMap, setOfficialPhoneMap] = useState<Record<string, string>>({});
   const [focusDisaster, setFocusDisaster] = useState<{ id: string; key: number } | null>(null);
   const [focusEvacuationSite, setFocusEvacuationSite] = useState<{ id: string; key: number } | null>(null);
-
   const [panelCollapsed, setPanelCollapsed] = useState(true);
+  const [hazardMapVisible, setHazardMapVisible] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user) {
@@ -125,64 +127,92 @@ export default function UnifiedMapPage() {
     }
   }, [user]);
 
-  useEffect(() => { fetchData(); }, [user, fetchData]);
-  useEffect(() => { if (tabVisible) fetchData(); }, [tabVisible, fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [user, fetchData]);
 
-  // Real-time subscriptions (unchanged)
+  useEffect(() => {
+    if (tabVisible) fetchData();
+  }, [tabVisible, fetchData]);
+
   useEffect(() => {
     const disastersChannel = supabase
       .channel("disasters")
-      .on("postgres_changes", { event: "*", schema: "public", table: "disasters" }, async (payload) => {
-        if (payload.eventType === "INSERT") {
-          const newDisaster = payload.new as Disaster;
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role, first_name, last_name")
-            .eq("id", newDisaster.user_id)
-            .single();
-          if (profile) {
-            setReporterRoleMap((prev) => ({ ...prev, [newDisaster.user_id]: profile.role }));
-            setResolvedByNameMap((prev) => ({
-              ...prev,
-              [newDisaster.user_id]: `${profile.first_name} ${profile.last_name}`.trim(),
-            }));
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "disasters" },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newDisaster = payload.new as Disaster;
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("role, first_name, last_name")
+              .eq("id", newDisaster.user_id)
+              .single();
+            if (profile) {
+              setReporterRoleMap((prev) => ({
+                ...prev,
+                [newDisaster.user_id]: profile.role,
+              }));
+              setResolvedByNameMap((prev) => ({
+                ...prev,
+                [newDisaster.user_id]: `${profile.first_name} ${profile.last_name}`.trim(),
+              }));
+            }
+            setDisasters((prev) => [newDisaster, ...prev]);
+            setFocusDisaster({ id: newDisaster.id, key: Date.now() });
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as Disaster;
+            setDisasters((prev) =>
+              prev.map((d) => (d.id === updated.id ? { ...d, ...updated } : d))
+            );
+            setFocusDisaster({ id: updated.id, key: Date.now() });
+          } else if (payload.eventType === "DELETE") {
+            setDisasters((prev) => prev.filter((d) => d.id !== payload.old.id));
+            setFocusDisaster((current) =>
+              current?.id === payload.old.id ? null : current
+            );
           }
-          setDisasters((prev) => [newDisaster, ...prev]);
-          setFocusDisaster({ id: newDisaster.id, key: Date.now() });
-        } else if (payload.eventType === "UPDATE") {
-          const updated = payload.new as Disaster;
-          setDisasters((prev) => prev.map((d) => (d.id === updated.id ? { ...d, ...updated } : d)));
-          setFocusDisaster({ id: updated.id, key: Date.now() });
-        } else if (payload.eventType === "DELETE") {
-          setDisasters((prev) => prev.filter((d) => d.id !== payload.old.id));
-          setFocusDisaster((current) => (current?.id === payload.old.id ? null : current));
         }
-      })
+      )
       .subscribe();
 
     const evacChannel = supabase
       .channel("evacuation_sites")
-      .on("postgres_changes", { event: "*", schema: "public", table: "evacuation_sites" }, async (payload) => {
-        if (payload.eventType === "INSERT") {
-          const newSite = payload.new as EvacuationSite;
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("contact_number")
-            .eq("id", newSite.official_id)
-            .single();
-          if (profile?.contact_number)
-            setOfficialPhoneMap((prev) => ({ ...prev, [newSite.official_id]: profile.contact_number }));
-          setEvacuationSites((prev) => [newSite, ...prev]);
-          setFocusEvacuationSite({ id: newSite.id, key: Date.now() });
-        } else if (payload.eventType === "UPDATE") {
-          const updated = payload.new as EvacuationSite;
-          setEvacuationSites((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
-          setFocusEvacuationSite({ id: updated.id, key: Date.now() });
-        } else if (payload.eventType === "DELETE") {
-          setEvacuationSites((prev) => prev.filter((s) => s.id !== payload.old.id));
-          setFocusEvacuationSite((current) => (current?.id === payload.old.id ? null : current));
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "evacuation_sites" },
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newSite = payload.new as EvacuationSite;
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("contact_number")
+              .eq("id", newSite.official_id)
+              .single();
+            if (profile?.contact_number)
+              setOfficialPhoneMap((prev) => ({
+                ...prev,
+                [newSite.official_id]: profile.contact_number,
+              }));
+            setEvacuationSites((prev) => [newSite, ...prev]);
+            setFocusEvacuationSite({ id: newSite.id, key: Date.now() });
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as EvacuationSite;
+            setEvacuationSites((prev) =>
+              prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+            );
+            setFocusEvacuationSite({ id: updated.id, key: Date.now() });
+          } else if (payload.eventType === "DELETE") {
+            setEvacuationSites((prev) =>
+              prev.filter((s) => s.id !== payload.old.id)
+            );
+            setFocusEvacuationSite((current) =>
+              current?.id === payload.old.id ? null : current
+            );
+          }
         }
-      })
+      )
       .subscribe();
 
     return () => {
@@ -226,8 +256,10 @@ export default function UnifiedMapPage() {
       });
   }, [disasters]);
 
-
-  const mapDisasters = useMemo(() => disasters.filter((d) => d.status !== "archived"), [disasters]);
+  const mapDisasters = useMemo(
+    () => disasters.filter((d) => d.status !== "archived"),
+    [disasters]
+  );
 
   return (
     <motion.div
@@ -236,7 +268,7 @@ export default function UnifiedMapPage() {
       transition={{ duration: 0.25 }}
       className="relative h-full w-full"
     >
-      <Map
+      <MapComponent
         key={user?.id || "no-user"}
         disasters={mapDisasters}
         evacuationSites={evacuationSites}
@@ -253,7 +285,51 @@ export default function UnifiedMapPage() {
         readOnly={false}
       />
 
-      {/* Active Disasters Panel – no rounded corners */}
+      {user && (
+        <button
+          onClick={() => setHazardMapVisible(true)}
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[1500] bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+          title="View Hazard Map"
+        >
+          <Map className="w-4 h-4 text-[#1e3a8a]" />
+        </button>
+      )}
+
+      <AnimatePresence>
+        {hazardMapVisible && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-white/10 backdrop-blur-sm p-4 pt-[88px]"
+            onClick={() => setHazardMapVisible(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+              className="relative max-w-full max-h-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setHazardMapVisible(false)}
+                className="absolute top-2 right-2 bg-white/90 p-1.5 rounded-full shadow hover:bg-white transition-colors z-10"
+                title="Close"
+              >
+                <X className="w-5 h-5 text-gray-700" />
+              </button>
+              <img
+                src="/Hazard Map.jpg"
+                alt="Hazard Map"
+                className="max-w-[80vw] max-h-[75vh] object-contain rounded-2xl shadow-2xl"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {user && (
         <div className="absolute top-4 right-4 z-[1500] w-72 max-h-[calc(100vh-6rem)] overflow-hidden overflow-y-auto rounded-3xl">
           <button
@@ -273,7 +349,9 @@ export default function UnifiedMapPage() {
                 className="bg-white border border-gray-200 shadow-lg overflow-hidden"
               >
                 {activeDisasters.length === 0 ? (
-                  <div className="p-4 text-center text-gray-500 text-sm">No active disasters</div>
+                  <div className="p-4 text-center text-gray-500 text-sm">
+                    No active disasters
+                  </div>
                 ) : (
                   activeDisasters.map((disaster) => {
                     const typeConfig = DISASTER_TYPE_CONFIG[disaster.type];
@@ -282,12 +360,8 @@ export default function UnifiedMapPage() {
                     const reportedTime = formatTime(disaster.reported_at);
 
                     return (
-                      <div
-                        key={disaster.id}
-                        className="p-3 border-b border-gray-100"
-                      >
+                      <div key={disaster.id} className="p-3 border-b border-gray-100">
                         <div className="flex flex-col gap-1.5">
-                          {/* Badge row (same style as popup) */}
                           <div className="flex flex-row flex-nowrap gap-1.5">
                             <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-600 text-white">
                               <Clock className="w-3 h-3" />
@@ -302,39 +376,46 @@ export default function UnifiedMapPage() {
                             {reporterRole && (
                               <span
                                 className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                  reporterRole === "official" ? "bg-blue-700 text-white" : "bg-gray-500 text-white"
+                                  reporterRole === "official"
+                                    ? "bg-blue-700 text-white"
+                                    : "bg-gray-500 text-white"
                                 }`}
                               >
                                 <User className="w-3 h-3" />
-                                <span>{reporterRole === "official" ? "Brgy. Official" : "Resident"}</span>
+                                <span>
+                                  {reporterRole === "official"
+                                    ? "Brgy. Official"
+                                    : "Resident"}
+                                </span>
                               </span>
                             )}
                           </div>
 
-                          {/* Reported time */}
                           {reportedTime && (
                             <div className="text-[10px] text-gray-600">
                               Reported: {reportedTime}
                             </div>
                           )}
 
-                          {/* Reporter details */}
                           <div className="flex items-center gap-1 flex-wrap">
                             <div className="flex items-center gap-1">
                               <User className="w-3 h-3 text-black" />
-                              <span className="text-xs font-medium text-black">{disaster.full_name}</span>
+                              <span className="text-xs font-medium text-black">
+                                {disaster.full_name}
+                              </span>
                             </div>
                             {disaster.contact_number && (
                               <>
                                 <span className="text-xs text-black">•</span>
                                 <div className="flex items-center gap-1">
                                   <Phone className="w-3 h-3 text-black" />
-                                  <span className="text-xs text-black">{disaster.contact_number}</span>
+                                  <span className="text-xs text-black">
+                                    {disaster.contact_number}
+                                  </span>
                                 </div>
                               </>
                             )}
                           </div>
-
                         </div>
                       </div>
                     );
@@ -367,19 +448,26 @@ export default function UnifiedMapPage() {
                   <Lock size={24} className="text-blue-700" />
                 </div>
               </div>
-              <h3 className="mb-2 text-center text-lg font-semibold text-blue-900">Locked</h3>
+              <h3 className="mb-2 text-center text-lg font-semibold text-blue-900">
+                Locked
+              </h3>
               <p className="text-center text-sm text-gray-700">
                 Sign up or log in to view and report disasters and evacuation sites.
               </p>
             </motion.div>
-
           </motion.div>
         )}
       </AnimatePresence>
 
       <div className="hidden md:flex absolute bottom-6 left-6 z-[9999] flex-col items-center bg-white/95 p-4 rounded-xl shadow-2xl border border-gray-200 pointer-events-auto transition-transform hover:scale-105">
-        <img src="/one-ilalim.png" alt="Mobile App QR Code" className="w-24 h-24 mb-2 object-contain" />
-        <p className="text-sm font-bold text-blue-900 text-center">Use on Mobile</p>
+        <img
+          src="/one-ilalim.png"
+          alt="Mobile App QR Code"
+          className="w-24 h-24 mb-2 object-contain"
+        />
+        <p className="text-sm font-bold text-blue-900 text-center">
+          Use on Mobile
+        </p>
         <p className="text-xs text-gray-600 text-center">Scan to access</p>
       </div>
     </motion.div>

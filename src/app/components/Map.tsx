@@ -30,10 +30,28 @@ import {
   VolumeX,
   Archive,
   RefreshCw,
+  Navigation,
+  ArrowRight,
+  ArrowLeft,
+  ArrowUp,
+  ArrowUpRight,
+  ArrowUpLeft,
+  RotateCcw,
+  RotateCw,
+  MapPin,
+  CircleDot,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import ActionPanel from "@/app/components/ActionPanel";
 
 type DisasterType = "fire" | "accident" | "flood" | "hazard";
+
+type DirectionStep = {
+  text: string;
+  type: string;
+  modifier?: string;
+};
 
 type Disaster = {
   id: string;
@@ -158,7 +176,6 @@ function BoundaryLayer() {
       fillOpacity: 0.1,
     }).addTo(map);
     map.fitBounds(bounds, { padding: [20, 20] });
-    map.setMaxBounds(bounds.pad(0.2));
     return () => {
       map.removeLayer(rectangle);
     };
@@ -190,14 +207,17 @@ function CustomRoutingControl({
   userLocation,
   destination,
   disasters = [],
+  isNavigating = false,
 }: {
   userLocation: [number, number] | null;
   destination: [number, number] | null;
   disasters?: Disaster[];
+  isNavigating?: boolean;
 }) {
   const map = useMap();
   const polylineRef = useRef<L.Polyline | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const hasFlownRef = useRef(false);
 
   const distanceToSegment = (
     p: [number, number],
@@ -256,7 +276,13 @@ function CustomRoutingControl({
         const coordinates = route.geometry.coordinates.map(
           ([lng, lat]: [number, number]) => [lat, lng] as [number, number]
         );
-        const activeDisasters = disasters.filter((d) => d.status === "active");
+        const activeDisasters = disasters.filter((d) => {
+          if (d.status !== "active") return false;
+          if (Math.abs(d.lat - destination[0]) < 0.0001 && Math.abs(d.lng - destination[1]) < 0.0001) {
+            return false;
+          }
+          return true;
+        });
         const THRESHOLD = 0.0003;
         const OFFSET = 0.0006;
         let foundAny = false;
@@ -307,14 +333,26 @@ function CustomRoutingControl({
           }
         }
         if (polylineRef.current) polylineRef.current.remove();
-        polylineRef.current = L.polyline(finalCoordinates, {
-          color: "#10b981",
-          weight: 5,
-          opacity: 0.8,
-        }).addTo(map);
-        map.fitBounds(L.polyline(finalCoordinates).getBounds(), {
-          padding: [50, 50],
-        });
+        if (finalCoordinates.length > 0) {
+          polylineRef.current = L.polyline(finalCoordinates, {
+            color: "#10b981",
+            weight: 5,
+            opacity: 0.8,
+          }).addTo(map);
+
+          // Only fly to route bounds on first draw; afterwards panTo follows user
+          if (!hasFlownRef.current) {
+            hasFlownRef.current = true;
+            const bounds = polylineRef.current.getBounds();
+            if (bounds.isValid()) {
+              map.flyToBounds(bounds, {
+                padding: [50, 50],
+                maxZoom: 18,
+                duration: 1.5
+              });
+            }
+          }
+        }
       } catch (error) {
         if (!(error instanceof Error && error.name === "AbortError")) {
           console.error("Routing error:", error);
@@ -330,7 +368,162 @@ function CustomRoutingControl({
     };
   }, [map, userLocation, destination, disasters]);
 
+  // Reset flown flag whenever destination changes so a fresh route always pans
+  useEffect(() => {
+    hasFlownRef.current = false;
+  }, [destination]);
+
+  // Follow the responder with panTo while navigation is active
+  useEffect(() => {
+    if (isNavigating && userLocation) {
+      map.panTo(userLocation, { animate: true, duration: 0.8 });
+    }
+  }, [isNavigating, userLocation, map]);
+
   return null;
+}
+
+function getManeuverIcon(type: string, modifier?: string) {
+  const mod = modifier?.toLowerCase() ?? "";
+  if (type === "arrive") return <MapPin size={16} className="text-green-600 shrink-0" />;
+  if (type === "depart") return <CircleDot size={16} className="text-blue-600 shrink-0" />;
+  if (type === "roundabout" || type === "rotary") {
+    return mod.includes("left")
+      ? <RotateCcw size={16} className="text-indigo-600 shrink-0" />
+      : <RotateCw size={16} className="text-indigo-600 shrink-0" />;
+  }
+  if (mod === "uturn") return <RotateCcw size={16} className="text-red-500 shrink-0" />;
+  if (mod === "sharp left" || mod === "left") return <ArrowLeft size={16} className="text-orange-500 shrink-0" />;
+  if (mod === "slight left") return <ArrowUpLeft size={16} className="text-orange-400 shrink-0" />;
+  if (mod === "sharp right" || mod === "right") return <ArrowRight size={16} className="text-orange-500 shrink-0" />;
+  if (mod === "slight right") return <ArrowUpRight size={16} className="text-orange-400 shrink-0" />;
+  return <ArrowUp size={16} className="text-gray-500 shrink-0" />;
+}
+
+function DirectionsPanel({
+  steps,
+  onClose,
+  onResolve,
+  disasterType,
+}: {
+  steps: DirectionStep[];
+  onClose: () => void;
+  onResolve?: () => Promise<void>;
+  disasterType?: DisasterType;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const nextStep = steps[0];
+
+  const handleResolve = async () => {
+    if (!onResolve || resolving) return;
+    setResolving(true);
+    try {
+      await onResolve();
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const typeColors: Record<string, string> = {
+    fire: "bg-red-50 border-red-200",
+    flood: "bg-blue-50 border-blue-200",
+    accident: "bg-orange-50 border-orange-200",
+    hazard: "bg-yellow-50 border-yellow-200",
+  };
+  const headerColor = disasterType ? typeColors[disasterType] ?? "" : "";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 60 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 60 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className="
+        pointer-events-auto
+        fixed bottom-0 left-0 right-0 z-[9999]
+        sm:absolute sm:bottom-6 sm:left-auto sm:right-6 sm:w-80 sm:rounded-xl
+        bg-white shadow-2xl border-t border-gray-200
+        sm:border sm:border-gray-200
+        rounded-t-2xl
+      "
+    >
+      {/* Drag handle – mobile only */}
+      <div className="flex justify-center pt-2 sm:hidden">
+        <div className="w-10 h-1 bg-gray-300 rounded-full" />
+      </div>
+
+      {/* Header – always visible, tappable to collapse */}
+      <div
+        className={`flex items-center justify-between px-4 py-3 cursor-pointer select-none rounded-t-2xl sm:rounded-t-xl ${headerColor}`}
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Navigation size={15} className="text-blue-800 shrink-0" />
+          {collapsed && nextStep ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="shrink-0">{getManeuverIcon(nextStep.type, nextStep.modifier)}</div>
+              <span className="text-xs font-semibold text-gray-800 truncate">{nextStep.text}</span>
+            </div>
+          ) : (
+            <h3 className="text-sm font-bold text-blue-900">Turn-by-Turn Directions</h3>
+          )}
+        </div>
+        <div className="flex items-center gap-1 ml-2 shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="text-gray-400 hover:text-red-500 transition-colors p-1"
+            title="Close"
+          >
+            <XCircle size={15} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setCollapsed((c) => !c); }}
+            className="text-gray-400 hover:text-blue-600 transition-colors p-1"
+            title={collapsed ? "Expand" : "Collapse"}
+          >
+            {collapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible step list */}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="steps"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pt-1 max-h-52 sm:max-h-64 overflow-y-auto">
+              {steps.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
+                  <div className="mt-0.5 shrink-0">{getManeuverIcon(step.type, step.modifier)}</div>
+                  <span className="text-xs text-gray-700 leading-snug">{step.text}</span>
+                </div>
+              ))}
+            </div>
+
+            {onResolve && (
+              <div className="px-4 pb-4 pt-3 border-t border-gray-100">
+                <button
+                  onClick={handleResolve}
+                  disabled={resolving}
+                  className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg py-2.5 transition-colors shadow-sm"
+                >
+                  <CheckCircle2 size={16} />
+                  {resolving ? "Marking as Resolved..." : "Mark Disaster as Resolved"}
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
 }
 
 function DisasterPopupContent({
@@ -340,6 +533,7 @@ function DisasterPopupContent({
   onFocus,
   reporterRoleMap,
   resolvedByNameMap,
+  onRespond,
 }: {
   disaster: Disaster;
   role: string | null;
@@ -347,9 +541,12 @@ function DisasterPopupContent({
   onFocus?: (id: string) => void;
   reporterRoleMap: Record<string, string>;
   resolvedByNameMap: Record<string, string>;
+  onRespond?: (disaster: Disaster) => Promise<void> | void;
 }) {
+  const map = useMap();
   const [isUpdating, setIsUpdating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     if (onFocus) onFocus(disaster.id);
@@ -357,9 +554,19 @@ function DisasterPopupContent({
 
   const handleRespond = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    let success = false;
     setActionError(null);
     setIsUpdating(true);
     try {
+      if (onRespond) {
+        await onRespond(disaster);
+        success = true;
+        map.closePopup();
+        if (onFocus) onFocus("");
+        return;
+      }
       const { error } = await supabase
         .from("disasters")
         .update({
@@ -369,16 +576,25 @@ function DisasterPopupContent({
         })
         .eq("id", disaster.id);
       if (error) throw error;
+      success = true;
+      map.closePopup();
+      if (onFocus) onFocus("");
     } catch (err: any) {
       console.error("Failed to respond:", err);
       setActionError("Failed to respond: " + (err.message ?? "Unknown error"));
     } finally {
-      setIsUpdating(false);
+      if (!success) {
+        setIsUpdating(false);
+        isProcessingRef.current = false;
+      }
     }
   };
 
   const handleResolve = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    let success = false;
     setActionError(null);
     setIsUpdating(true);
     try {
@@ -391,16 +607,25 @@ function DisasterPopupContent({
         })
         .eq("id", disaster.id);
       if (error) throw error;
+      success = true;
+      map.closePopup();
+      if (onFocus) onFocus("");
     } catch (err: any) {
       console.error("Failed to resolve:", err);
       setActionError("Failed to resolve: " + (err.message ?? "Unknown error"));
     } finally {
-      setIsUpdating(false);
+      if (!success) {
+        setIsUpdating(false);
+        isProcessingRef.current = false;
+      }
     }
   };
 
   const handleArchive = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+    let success = false;
     setActionError(null);
     setIsUpdating(true);
     try {
@@ -412,11 +637,17 @@ function DisasterPopupContent({
         })
         .eq("id", disaster.id);
       if (error) throw error;
+      success = true;
+      map.closePopup();
+      if (onFocus) onFocus("");
     } catch (err: any) {
       console.error("Failed to archive:", err);
       setActionError("Failed to archive: " + (err.message ?? "Unknown error"));
     } finally {
-      setIsUpdating(false);
+      if (!success) {
+        setIsUpdating(false);
+        isProcessingRef.current = false;
+      }
     }
   };
 
@@ -461,15 +692,14 @@ function DisasterPopupContent({
       <div className="relative z-20 flex flex-col gap-1">
         <div className="flex flex-row flex-nowrap gap-1.5 justify-center">
           <span
-            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${
-              disaster.status === "active"
+            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${disaster.status === "active"
                 ? "bg-red-600 text-white"
                 : disaster.status === "responding"
-                ? "bg-blue-600 text-white"
-                : disaster.status === "resolved"
-                ? "bg-green-600 text-white"
-                : "bg-gray-600 text-white"
-            }`}
+                  ? "bg-blue-600 text-white"
+                  : disaster.status === "resolved"
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-600 text-white"
+              }`}
           >
             {disaster.status === "active" ? (
               <Clock className="w-3 h-3" />
@@ -484,10 +714,10 @@ function DisasterPopupContent({
               {disaster.status === "active"
                 ? "Active"
                 : disaster.status === "responding"
-                ? "Responding"
-                : disaster.status === "resolved"
-                ? "Resolved"
-                : "Archived"}
+                  ? "Responding"
+                  : disaster.status === "resolved"
+                    ? "Resolved"
+                    : "Archived"}
             </span>
           </span>
 
@@ -500,11 +730,10 @@ function DisasterPopupContent({
 
           {reporterRole && (
             <span
-              className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${
-                reporterRole === "official"
+              className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${reporterRole === "official"
                   ? "bg-blue-700 text-white"
                   : "bg-gray-500 text-white"
-              }`}
+                }`}
             >
               <User className="w-3 h-3" />
               <span>
@@ -587,22 +816,22 @@ function DisasterPopupContent({
             </button>
           )}
           {showOfficialButtons && (
-            <>
-              <button
-                onClick={handleResolve}
-                disabled={isUpdating}
-                className="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
-              >
-                {isUpdating ? "Resolving..." : "Resolve"}
-              </button>
-              <button
-                onClick={handleArchive}
-                disabled={isUpdating}
-                className="bg-gray-600 hover:bg-gray-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
-              >
-                {isUpdating ? "Archiving..." : "Archive"}
-              </button>
-            </>
+            <button
+              onClick={handleResolve}
+              disabled={isUpdating}
+              className="bg-green-600 hover:bg-green-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
+            >
+              {isUpdating ? "Resolving..." : "Resolve"}
+            </button>
+          )}
+          {canArchive && disaster.status !== "archived" && (
+            <button
+              onClick={handleArchive}
+              disabled={isUpdating}
+              className="bg-gray-600 hover:bg-gray-700 text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors"
+            >
+              {isUpdating ? "Archiving..." : "Archive"}
+            </button>
           )}
         </div>
       </div>
@@ -716,11 +945,10 @@ function EvacuationSitePopupContent({
       <div className="relative z-20 flex flex-col gap-1">
         <div className="flex flex-row flex-nowrap gap-1.5 justify-center">
           <span
-            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${
-              site.status === "available"
+            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-xs font-medium ${site.status === "available"
                 ? "bg-green-600 text-white"
                 : "bg-red-600 text-white"
-            }`}
+              }`}
           >
             {site.status === "available" ? (
               <CheckCircle2 className="w-3 h-3" />
@@ -828,17 +1056,16 @@ function EvacuationSitePopupContent({
             <button
               onClick={handleStatusToggle}
               disabled={isUpdating}
-              className={`${
-                site.status === "available"
+              className={`${site.status === "available"
                   ? "bg-red-600 hover:bg-red-700"
                   : "bg-green-600 hover:bg-green-700"
-              } text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors`}
+                } text-white py-1 px-3 rounded-md text-xs font-medium disabled:opacity-50 transition-colors`}
             >
               {isUpdating
                 ? "Updating..."
                 : site.status === "available"
-                ? "Mark Full"
-                : "Mark Available"}
+                  ? "Mark Full"
+                  : "Mark Available"}
             </button>
           )}
           {canDelete && (
@@ -894,6 +1121,7 @@ export default function Map({
   const isResponder = role === "responder";
 
   const [localDisasters, setLocalDisasters] = useState<Disaster[]>(disasters);
+  const [respondingDisasterId, setRespondingDisasterId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDisasters = async () => {
@@ -936,6 +1164,10 @@ export default function Map({
               prev.map((d) => (d.id === updated.id ? updated : d))
             );
           }
+          if (respondingDisasterId === updated.id && updated.status !== "responding") {
+            setRespondingDisasterId(null);
+            setRoutingDestination(null);
+          }
         }
       )
       .on(
@@ -945,6 +1177,10 @@ export default function Map({
           setLocalDisasters((prev) =>
             prev.filter((d) => d.id !== payload.old.id)
           );
+          if (respondingDisasterId === payload.old.id) {
+            setRespondingDisasterId(null);
+            setRoutingDestination(null);
+          }
         }
       )
       .subscribe();
@@ -952,27 +1188,20 @@ export default function Map({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [respondingDisasterId]);
 
-  const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">(
-    "disaster"
-  );
-  const [locationMode, setLocationMode] = useState<"current" | "pick">(
-    "current"
-  );
-  const [currentLocation, setCurrentLocation] = useState<
-    [number, number] | null
-  >(null);
-  const [pickedLocation, setPickedLocation] = useState<
-    [number, number] | null
-  >(null);
+  const [panelMode, setPanelMode] = useState<"disaster" | "evacuation">("disaster");
+  const [locationMode, setLocationMode] = useState<"current" | "pick">("current");
+  const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
+  const [pickedLocation, setPickedLocation] = useState<[number, number] | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBoundaryError, setShowBoundaryError] = useState(false);
-  const [routingDestination, setRoutingDestination] = useState<
-    [number, number] | null
-  >(null);
+  const [routingDestination, setRoutingDestination] = useState<[number, number] | null>(null);
+  const [directionsSteps, setDirectionsSteps] = useState<DirectionStep[]>([]);
+  const [showDirections, setShowDirections] = useState(false);
+  const watchIdRef = useRef<number | null>(null);
 
   const [alertActive, setAlertActive] = useState(false);
   const [alertDisasterId, setAlertDisasterId] = useState<string | null>(null);
@@ -986,52 +1215,28 @@ export default function Map({
   const manuallyClosedEvac = useRef(false);
   const initialRequestDone = useRef(false);
 
-  // --- Responder: no location tracking ---
   useEffect(() => {
     if (isResponder) {
-      setCurrentLocation(null);
       setPickedLocation(null);
       setLocationError(null);
       setIsGettingLocation(false);
     }
   }, [isResponder]);
 
-  const focusedDisasterObj = useMemo(
-    () => localDisasters.find((d) => focusDisaster?.id === d.id),
-    [localDisasters, focusDisaster]
-  );
-  const focusedEvacObj = useMemo(
-    () => evacuationSites.find((s) => focusEvacuationSite?.id === s.id),
-    [evacuationSites, focusEvacuationSite]
-  );
-
-  useEffect(() => {
-    if (!readOnly && focusDisaster && !manuallyClosedDisaster.current) {
-      const timer = setTimeout(() => {
-        disasterMarkersRef.current[focusDisaster.id]?.openPopup();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [focusDisaster, readOnly]);
-
-  useEffect(() => {
-    if (!readOnly && focusEvacuationSite && !manuallyClosedEvac.current) {
-      const timer = setTimeout(() => {
-        evacMarkersRef.current[focusEvacuationSite.id]?.openPopup();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [focusEvacuationSite, readOnly]);
-
   const requestDeviceLocation = useCallback(() => {
-    if (isResponder) return; // responders do not need location
     if (!navigator.geolocation) {
       setLocationError("Geolocation not supported");
       return;
     }
     setIsGettingLocation(true);
     setLocationError(null);
-    navigator.geolocation.getCurrentPosition(
+
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         setCurrentLocation([pos.coords.latitude, pos.coords.longitude]);
         setLocationError(null);
@@ -1041,27 +1246,27 @@ export default function Map({
         setLocationError(err.message);
         setIsGettingLocation(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
-  }, [isResponder]);
+  }, []);
 
   useEffect(() => {
-    if (!initialRequestDone.current && locationMode === "current" && !isResponder) {
+    if (!initialRequestDone.current && locationMode === "current") {
       initialRequestDone.current = true;
       requestDeviceLocation();
     }
-  }, [locationMode, requestDeviceLocation, isResponder]);
+  }, [locationMode, requestDeviceLocation]);
 
   const handleLocationModeChange = useCallback(
     (mode: "current" | "pick") => {
       setLocationMode(mode);
-      if (mode === "current" && !isResponder) {
+      if (mode === "current") {
         if (!currentLocation && !isGettingLocation) {
           requestDeviceLocation();
         }
       }
     },
-    [currentLocation, isGettingLocation, requestDeviceLocation, isResponder]
+    [currentLocation, isGettingLocation, requestDeviceLocation]
   );
 
   const handleMapPick = (lat: number, lng: number) => {
@@ -1070,17 +1275,10 @@ export default function Map({
     }
   };
 
-  const handleBoundaryError = useCallback(
-    () => setShowBoundaryError(true),
-    []
-  );
+  const handleBoundaryError = useCallback(() => setShowBoundaryError(true), []);
 
   const submitDisasterReport = useCallback(
-    async (
-      type: DisasterType,
-      location: [number, number],
-      description?: string
-    ) => {
+    async (type: DisasterType, location: [number, number], description?: string) => {
       if (!user) return;
       if (!isWithinBoundary(location[0], location[1])) {
         setShowBoundaryError(true);
@@ -1113,11 +1311,7 @@ export default function Map({
   );
 
   const submitEvacuationSite = useCallback(
-    async (
-      location: [number, number],
-      title: string,
-      description?: string
-    ) => {
+    async (location: [number, number], title: string, description?: string) => {
       if (!user) return;
       if (!isWithinBoundary(location[0], location[1])) {
         setShowBoundaryError(true);
@@ -1165,13 +1359,10 @@ export default function Map({
   };
 
   const getEvacuationIcon = (site: EvacuationSite) => {
-    return site.status === "available"
-      ? evacuationSiteAvailable
-      : evacuationSiteFull;
+    return site.status === "available" ? evacuationSiteAvailable : evacuationSiteFull;
   };
 
-  const routingUserLocation =
-    locationMode === "current" ? currentLocation : pickedLocation;
+  const routingUserLocation = locationMode === "current" ? currentLocation : pickedLocation;
 
   const handleRequestRoute = useCallback(
     (site: EvacuationSite) => {
@@ -1205,6 +1396,137 @@ export default function Map({
       setRoutingDestination(null);
     }
   }, [routingUserLocation]);
+
+  const fetchDirections = useCallback(async () => {
+    if (!currentLocation || !routingDestination) return;
+    try {
+      const coords = `${currentLocation[1]},${currentLocation[0]};${routingDestination[1]},${routingDestination[0]}`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.routes?.length > 0) {
+        const allSteps: DirectionStep[] = [];
+        data.routes[0].legs.forEach((leg: any) => {
+          leg.steps.forEach((step: any) => {
+            const mType: string = step.maneuver.type ?? "";
+            const mMod: string | undefined = step.maneuver.modifier;
+            let text = "";
+            if (step.maneuver.instruction && step.maneuver.instruction.trim().length > 0) {
+              text = step.maneuver.instruction.trim();
+            } else {
+              const modifier = mMod ? ` ${mMod}` : "";
+              const name = step.name ? ` on ${step.name}` : "";
+              if (mType === "turn") text = `Turn${modifier}${name}`;
+              else if (mType === "new name") text = `Continue${modifier}${name}`;
+              else if (mType === "depart") text = `Head${modifier}${name}`;
+              else if (mType === "arrive") text = `Arrive at destination`;
+              else text = `${mType}${modifier}${name}`;
+              text = text.charAt(0).toUpperCase() + text.slice(1);
+            }
+            allSteps.push({ text, type: mType, modifier: mMod });
+          });
+        });
+        setDirectionsSteps(allSteps);
+        setShowDirections(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch directions:", error);
+    }
+  }, [currentLocation, routingDestination]);
+
+  useEffect(() => {
+    if (routingDestination && currentLocation) {
+      fetchDirections();
+    } else {
+      setShowDirections(false);
+      setDirectionsSteps([]);
+    }
+  }, [routingDestination, currentLocation, fetchDirections]);
+
+  // Stop GPS tracking when no longer responding
+  useEffect(() => {
+    if (!respondingDisasterId && watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+  }, [respondingDisasterId]);
+
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleRespondToDisaster = useCallback(
+    async (disaster: Disaster) => {
+      if (!user) return;
+      let loc = currentLocation;
+      if (!loc) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            if (!navigator.geolocation) {
+              reject(new Error("Geolocation not supported"));
+              return;
+            }
+            setIsGettingLocation(true);
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                loc = [pos.coords.latitude, pos.coords.longitude];
+                setCurrentLocation(loc);
+                setIsGettingLocation(false);
+                resolve();
+              },
+              (err) => {
+                setIsGettingLocation(false);
+                alert("Location access is required to respond to a disaster. Please enable it.");
+                reject(err);
+              },
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          });
+        } catch { }
+      }
+
+      const { error } = await supabase
+        .from("disasters")
+        .update({
+          status: "responding",
+          responded_by: user.id,
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", disaster.id);
+
+      if (error) {
+        console.error("Respond error:", error);
+        return;
+      }
+
+      setRespondingDisasterId(disaster.id);
+      if (loc) {
+        setRoutingDestination([disaster.lat, disaster.lng]);
+      }
+      onFocusDisaster?.("");
+
+      // Start live GPS tracking so the map follows the responder
+      if (navigator.geolocation) {
+        if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (pos) => setCurrentLocation([pos.coords.latitude, pos.coords.longitude]),
+          (err) => console.warn("GPS watch error:", err),
+          { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+        );
+      }
+    },
+    [user, currentLocation, onFocusDisaster]
+  );
+
+  const visibleDisasters = useMemo(() => {
+    if (!isResponder || !respondingDisasterId) return localDisasters;
+    return localDisasters.filter((d) => d.id === respondingDisasterId);
+  }, [localDisasters, isResponder, respondingDisasterId]);
 
   const stopAlert = useCallback(() => {
     if (alertTimeoutRef.current) {
@@ -1383,7 +1705,7 @@ export default function Map({
           </Marker>
         )}
 
-        {!readOnly && locationMode === "current" && currentLocation && !isResponder && (
+        {!readOnly && locationMode === "current" && currentLocation && (
           <Marker position={currentLocation} icon={userLocationIcon}>
             <Popup>Your current location.</Popup>
           </Marker>
@@ -1392,10 +1714,11 @@ export default function Map({
         <CustomRoutingControl
           userLocation={routingUserLocation}
           destination={routingDestination}
-          disasters={localDisasters}
+          disasters={visibleDisasters}
+          isNavigating={isResponder && !!respondingDisasterId}
         />
 
-        {localDisasters.map((disaster) => (
+        {visibleDisasters.map((disaster) => (
           <Marker
             key={disaster.id}
             position={[disaster.lat, disaster.lng]}
@@ -1441,7 +1764,7 @@ export default function Map({
               disasterMarkersRef.current[disaster.id] = ref;
             }}
           >
-            <Popup className="disaster-popup" keepInView autoPan={false}>
+            <Popup className="disaster-popup" autoPan={false}>
               <DisasterPopupContent
                 disaster={disaster}
                 role={role ?? null}
@@ -1449,6 +1772,7 @@ export default function Map({
                 onFocus={onFocusDisaster}
                 reporterRoleMap={reporterRoleMap}
                 resolvedByNameMap={resolvedByNameMap}
+                onRespond={isResponder ? handleRespondToDisaster : undefined}
               />
             </Popup>
           </Marker>
@@ -1497,7 +1821,7 @@ export default function Map({
               evacMarkersRef.current[site.id] = ref;
             }}
           >
-            <Popup className="evacuation-popup" keepInView autoPan={false}>
+            <Popup className="evacuation-popup" autoPan={false}>
               <EvacuationSitePopupContent
                 site={site}
                 role={role ?? null}
@@ -1586,6 +1910,47 @@ export default function Map({
           </button>
         </div>
       )}
+
+      <AnimatePresence>
+        {showDirections && directionsSteps.length > 0 && (() => {
+          const respondingDisaster = respondingDisasterId
+            ? localDisasters.find((d) => d.id === respondingDisasterId)
+            : null;
+          return (
+            <DirectionsPanel
+              steps={directionsSteps}
+              onClose={() => setShowDirections(false)}
+              disasterType={respondingDisaster?.type}
+              onResolve={isResponder && respondingDisaster ? async () => {
+                if (!user) return;
+                const { error } = await supabase
+                  .from("disasters")
+                  .update({
+                    status: "resolved",
+                    resolved_at: new Date().toISOString(),
+                    resolved_by: user.id,
+                  })
+                  .eq("id", respondingDisaster.id);
+                if (error) throw error;
+                // Stop siren/alert
+                if (alertDisasterId) {
+                  localStorage.setItem(`dismissedAlert_${alertDisasterId}`, "true");
+                }
+                stopAlert();
+                // Clear navigation state
+                setRespondingDisasterId(null);
+                setRoutingDestination(null);
+                setShowDirections(false);
+                setDirectionsSteps([]);
+                if (watchIdRef.current !== null) {
+                  navigator.geolocation.clearWatch(watchIdRef.current);
+                  watchIdRef.current = null;
+                }
+              } : undefined}
+            />
+          );
+        })()}
+      </AnimatePresence>
     </motion.div>
   );
 }

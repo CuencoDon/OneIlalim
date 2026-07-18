@@ -15,7 +15,6 @@ import {
 import { motion, Variants } from "framer-motion";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import html2canvas from "html2canvas";
 
 type Timeframe = "daily" | "weekly" | "monthly" | "annually";
 
@@ -289,98 +288,206 @@ export default function HistoryPage() {
     setExporting(true);
     try {
       const pdf = new jsPDF("p", "mm", "a4");
-      pdf.setFont("Times", "normal");
       const pageWidth = pdf.internal.pageSize.width;
       const pageHeight = pdf.internal.pageSize.height;
       const margin = 14;
 
-      const addHeaderFooter = (data: any) => {
-        pdf.setFillColor(30, 58, 138);
-        pdf.rect(0, 0, pageWidth, 20, "F");
-        pdf.setFontSize(12);
-        pdf.setTextColor(255, 255, 255);
-        pdf.text("One Ilalim - Smart Disaster Monitoring System", pageWidth / 2, 12, { align: "center" });
-        pdf.setFontSize(8);
-        pdf.text("Disaster History Report", pageWidth / 2, 17, { align: "center" });
+      const REPORT_LOGO_SRC = "/logo_newilalim.jpg";
+      const FALLBACK_LOGO_SRC = "/newilalim.png";
 
-        pdf.setFontSize(8);
-        pdf.setTextColor(100);
-        pdf.text("One Ilalim", margin, pageHeight - 10);
-        pdf.text(`Page ${data.pageNumber}`, pageWidth - margin, pageHeight - 10, { align: "right" });
+      const getImageType = (src: string): "PNG" | "JPEG" => {
+        const ext = src.split(".").pop()?.toLowerCase();
+        return ext === "png" ? "PNG" : "JPEG";
       };
 
-      pdf.setFontSize(14);
-      pdf.setTextColor(30, 58, 138);
-      pdf.text("Disaster Summary", margin, 30);
-      pdf.setFontSize(10);
-      pdf.setTextColor(100);
-      pdf.text(`${timeframeLabel()} Report | ${new Date().toLocaleDateString()}`, margin, 36);
+      const loadLogo = (): Promise<{ img: HTMLImageElement; type: "PNG" | "JPEG" } | null> => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.src = REPORT_LOGO_SRC;
+          img.onload = () => resolve({ img, type: getImageType(REPORT_LOGO_SRC) });
+          img.onerror = () => {
+            const fallbackImg = new Image();
+            fallbackImg.src = FALLBACK_LOGO_SRC;
+            fallbackImg.onload = () => resolve({ img: fallbackImg, type: getImageType(FALLBACK_LOGO_SRC) });
+            fallbackImg.onerror = () => resolve(null);
+          };
+        });
+      };
 
-      const summaryData = [
-        ["Fire", `Active: ${typeStats[0].active}, Resolved: ${typeStats[0].resolved}`],
-        ["Accident", `Active: ${typeStats[1].active}, Resolved: ${typeStats[1].resolved}`],
-        ["Flood", `Active: ${typeStats[2].active}, Resolved: ${typeStats[2].resolved}`],
-        ["Hazard", `Active: ${typeStats[3].active}, Resolved: ${typeStats[3].resolved}`],
-        ["Total Disasters", `${stats.total}`],
-        ["Active Disasters", `${stats.active}`],
-        ["Resolved Disasters", `${stats.resolved}`],
-        ["Resolution Rate", stats.total ? `${Math.round((stats.resolved / stats.total) * 100)}%` : "0%"],
+      const logoPayload = await loadLogo();
+
+      const currentUserProfile = user ? profileMap[user.id] : null;
+      const generatedBy = currentUserProfile
+        ? `${currentUserProfile.first_name || ""} ${currentUserProfile.last_name || ""}`.trim()
+        : user?.email || "System Official";
+
+      const renderedHeaderPages = new Set<number>();
+      const drawHeader = (data: any) => {
+        if (renderedHeaderPages.has(data.pageNumber)) return;
+        renderedHeaderPages.add(data.pageNumber);
+
+        pdf.setFont("helvetica", "italic");
+        pdf.setFontSize(8);
+        pdf.setTextColor(120);
+        pdf.text("ONE ILALIM - SMART DISASTER MONITORING SYSTEM", margin, 10);
+        pdf.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - margin, 10, { align: "right" });
+        pdf.setDrawColor(200);
+        pdf.setLineWidth(0.2);
+        pdf.line(margin, 12, pageWidth - margin, 12);
+      };
+
+      let currentY = 16;
+
+      if (logoPayload) {
+        pdf.addImage(logoPayload.img, logoPayload.type, margin, currentY, 20, 20);
+      }
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text("REPUBLIC OF THE PHILIPPINES", margin + 23, currentY + 4);
+      pdf.text("PROVINCE OF ZAMBALES | OLONGAPO CITY", margin + 23, currentY + 8);
+
+      pdf.setFontSize(13);
+      pdf.text("BARANGAY NEW ILALIM", margin + 23, currentY + 14);
+
+      currentY += 21;
+      pdf.setDrawColor(30, 58, 138);
+      pdf.setLineWidth(0.8);
+      pdf.line(margin, currentY, pageWidth - margin, currentY);
+      pdf.setLineWidth(0.2);
+      pdf.line(margin, currentY + 1, pageWidth - margin, currentY + 1);
+
+      currentY += 9;
+      pdf.setFontSize(11);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text("BARANGAY NEW ILALIM OFFICIAL DISASTER INCIDENT HISTORY REPORT", margin, currentY);
+
+      currentY += 5;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(80);
+      pdf.text(`Report Timeframe: ${timeframeLabel()} Overview`, margin, currentY);
+      pdf.text(`Status: Active & Resolved Case Logs`, pageWidth - margin, currentY, { align: "right" });
+
+      currentY += 4.5;
+      pdf.text(`Prepared By: ${generatedBy}`, margin, currentY);
+      pdf.text(`Document Reference: BNI-DRRMO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`, pageWidth - margin, currentY, { align: "right" });
+
+      currentY += 4;
+      pdf.setDrawColor(220);
+      pdf.setLineWidth(0.3);
+      pdf.line(margin, currentY, pageWidth - margin, currentY);
+
+      currentY += 8;
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(11);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text("1. Executive Summary & Operational Metrics", margin, currentY);
+
+      const summaryBody = [
+        ["Total Logged Incidents", `${stats.total}`, "Active Emergency Cases", `${stats.active}`],
+        ["Resolved Incidents", `${stats.resolved}`, "Resolution Performance Rate", stats.total ? `${Math.round((stats.resolved / stats.total) * 100)}%` : "0%"]
       ];
 
       autoTable(pdf, {
-        startY: 40,
-        head: [["Category", "Count"]],
-        body: summaryData,
-        styles: { font: "Times", fontSize: 9, cellPadding: 2 },
-        headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: "bold" },
-        columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 100 } },
+        startY: currentY + 3,
+        body: summaryBody,
+        theme: "plain",
+        styles: { font: "helvetica", fontSize: 9.5, cellPadding: 2.5, textColor: [50, 50, 50] },
+        columnStyles: {
+          0: { fontStyle: "bold", textColor: [30, 58, 138], cellWidth: 50 },
+          1: { fontStyle: "bold", cellWidth: 40 },
+          2: { fontStyle: "bold", textColor: [220, 38, 38], cellWidth: 50 },
+          3: { fontStyle: "bold", cellWidth: 40 }
+        },
         margin: { left: margin, right: margin },
-        didDrawPage: (data: any) => addHeaderFooter(data),
+        didDrawPage: (data: any) => drawHeader(data),
       });
-      let finalY = (pdf as any).lastAutoTable.finalY + 8;
 
-      const chartElement = chartRef.current?.querySelector(".recharts-wrapper");
-      if (chartElement) {
-        const chartCanvas = await html2canvas(chartElement as HTMLElement, { scale: 2, backgroundColor: "#ffffff" } as any);
-        const chartImgData = chartCanvas.toDataURL("image/png");
+      currentY = (pdf as any).lastAutoTable.finalY + 8;
 
-        pdf.setFont("Times", "normal");
-        pdf.setFontSize(12);
-        pdf.setTextColor(30, 58, 138);
-        pdf.text("Disaster Trends", margin, finalY);
-        finalY += 6;
-        const imgWidth = pageWidth - margin * 2;
-        const imgHeight = (chartCanvas.height * imgWidth) / chartCanvas.width;
-        if (finalY + imgHeight > pageHeight - 20) {
-          pdf.addPage();
-          finalY = 25;
-          pdf.text("Disaster Trends", margin, finalY);
-          finalY += 6;
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(11);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text("2. Disaster Trend Visualization (Native Graph)", margin, currentY);
+
+      currentY += 4;
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(margin, currentY, pageWidth - margin * 2, 45, "F");
+
+      pdf.setDrawColor(30, 58, 138);
+      pdf.setLineWidth(0.4);
+      const graphOriginX = margin + 15;
+      const graphOriginY = currentY + 37;
+      const graphWidth = pageWidth - margin * 2 - 25;
+      const graphHeight = 28;
+
+      pdf.line(graphOriginX, graphOriginY, graphOriginX + graphWidth, graphOriginY);
+      pdf.line(graphOriginX, graphOriginY, graphOriginX, graphOriginY - graphHeight);
+
+      const filteredTrendData = chartData.slice(-10);
+      const barCount = filteredTrendData.length;
+      if (barCount > 0) {
+        const barSpacing = graphWidth / barCount;
+        const maxVal = Math.max(...filteredTrendData.map(d => d.active + d.resolved), 4);
+
+        pdf.setFontSize(6);
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(120);
+        pdf.setDrawColor(220, 225, 230);
+        pdf.setLineWidth(0.15);
+        for (let i = 1; i <= 4; i++) {
+          const gridY = graphOriginY - (i / 4) * graphHeight;
+          const labelVal = Math.round((i / 4) * maxVal);
+          pdf.line(graphOriginX, gridY, graphOriginX + graphWidth, gridY);
+          pdf.text(labelVal.toString(), graphOriginX - 3, gridY + 1.5, { align: "right" });
         }
-        pdf.addImage(chartImgData, "PNG", margin, finalY, imgWidth, imgHeight);
-        finalY += imgHeight + 5;
+        pdf.text("0", graphOriginX - 3, graphOriginY + 1.5, { align: "right" });
 
-        pdf.setFillColor(239, 68, 68);
-        pdf.rect(margin, finalY, 4, 4, "F");
-        pdf.setFontSize(9);
-        pdf.setTextColor(0);
-        pdf.text("Active", margin + 5, finalY + 3.5);
-        pdf.setFillColor(34, 197, 94);
-        pdf.rect(margin + 30, finalY, 4, 4, "F");
-        pdf.text("Resolved", margin + 35, finalY + 3.5);
-        finalY += 6;
+        filteredTrendData.forEach((d, idx) => {
+          const barX = graphOriginX + idx * barSpacing + barSpacing * 0.15;
+          const barW = barSpacing * 0.7;
+
+          const activeH = (d.active / maxVal) * graphHeight;
+          if (activeH > 0) {
+            pdf.setFillColor(239, 68, 68);
+            pdf.rect(barX, graphOriginY - activeH, barW / 2, activeH, "F");
+          }
+
+          const resolvedH = (d.resolved / maxVal) * graphHeight;
+          if (resolvedH > 0) {
+            pdf.setFillColor(34, 197, 94);
+            pdf.rect(barX + barW / 2, graphOriginY - resolvedH, barW / 2, resolvedH, "F");
+          }
+
+          pdf.setFontSize(6);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(80);
+          pdf.text(d.label.substring(0, 8), barX + barW / 2, graphOriginY + 4, { align: "center" });
+        });
       }
 
-      pdf.setFont("Times", "normal");
-      pdf.setFontSize(12);
+      pdf.setFillColor(239, 68, 68);
+      pdf.rect(pageWidth - margin - 45, currentY + 3, 3, 3, "F");
+      pdf.setFontSize(7);
+      pdf.setTextColor(50);
+      pdf.text("Active Cases", pageWidth - margin - 40, currentY + 5.5);
+
+      pdf.setFillColor(34, 197, 94);
+      pdf.rect(pageWidth - margin - 23, currentY + 3, 3, 3, "F");
+      pdf.text("Resolved Cases", pageWidth - margin - 18, currentY + 5.5);
+
+      currentY += 49;
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(11);
       pdf.setTextColor(30, 58, 138);
-      pdf.text("Detailed Disaster Records", margin, finalY);
-      finalY += 5;
+      pdf.text("3. Detailed Incident Registry", margin, currentY);
 
       const tableRows = filteredDisasters.map((dis) => {
         const reporter = getReporterInfo(dis);
         const resolver = getResolverInfo(dis.resolved_by);
-        const responder = getResponderInfo(dis.responded_by);
         const effective = getEffectiveStatus(dis);
         const statusText =
           dis.status === "archived" && dis.resolved_at
@@ -393,46 +500,45 @@ export default function HistoryPage() {
             ? "Resolved"
             : "Active";
         return [
-          dis.type.charAt(0).toUpperCase() + dis.type.slice(1),
-          `${reporter.name}${reporter.role ? ` (${reporter.role})` : ""}${reporter.phone ? ` - ${reporter.phone}` : ""}`,
+          dis.type.toUpperCase(),
+          `${reporter.name}\n${reporter.phone || ""}`,
           dis.description || "—",
           statusText,
           new Date(dis.reported_at).toLocaleString(),
-          dis.responded_at ? new Date(dis.responded_at).toLocaleString() : "—",
-          `${responder.name}${responder.role ? ` (${responder.role})` : ""}`,
           dis.resolved_at ? new Date(dis.resolved_at).toLocaleString() : "—",
-          `${resolver.name}${resolver.role ? ` (${resolver.role})` : ""}${resolver.phone ? ` - ${resolver.phone}` : ""}`,
+          resolver.name !== "—" ? `${resolver.name}\n(${resolver.role || "Official"})` : "—"
         ];
       });
 
-      if (finalY > pageHeight - 30) {
-        pdf.addPage();
-        finalY = 25;
-        pdf.text("Detailed Disaster Records", margin, finalY);
-        finalY += 5;
-      }
-
       autoTable(pdf, {
-        startY: finalY,
-        head: [["Type", "Reporter", "Description", "Status", "Reported", "Responded At", "Responded By", "Resolved", "Resolved By"]],
+        startY: currentY + 3,
+        head: [["Type", "Reporter Details", "Incident Description", "Status", "Reported Time", "Resolved Time", "Resolved By"]],
         body: tableRows,
-        styles: { font: "Times", fontSize: 5.5, cellPadding: 1, lineColor: [200, 200, 200], lineWidth: 0.1, overflow: "linebreak" },
+        styles: { font: "helvetica", fontSize: 6.5, cellPadding: 2, overflow: "linebreak" },
         headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: "bold" },
-        alternateRowStyles: { fillColor: [245, 245, 245] },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
         margin: { left: margin, right: margin },
         columnStyles: {
-          0: { cellWidth: 14 },
-          1: { cellWidth: 24 },
-          2: { cellWidth: 22 },
-          3: { cellWidth: 16 },
-          4: { cellWidth: 22 },
-          5: { cellWidth: 22 },
-          6: { cellWidth: 20 },
-          7: { cellWidth: 22 },
-          8: { cellWidth: 20 },
+          0: { cellWidth: 15 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 42 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 26 },
+          5: { cellWidth: 26 },
+          6: { cellWidth: 23 }
         },
-        didDrawPage: (data: any) => addHeaderFooter(data),
+        didDrawPage: (data: any) => drawHeader(data),
       });
+
+      const totalPages = pdf.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(100);
+        pdf.text("CONFIDENTIAL - BARANGAY EMERGENCY OPS", margin, pageHeight - 10);
+        pdf.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: "right" });
+      }
 
       pdf.save(`disaster-report-${timeframe}-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) {

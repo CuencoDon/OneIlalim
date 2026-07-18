@@ -10,7 +10,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const UNITS = ["dozen", "bundle", "pack", "box", "unit"];
-
 const MODAL_BACKDROP_CLASS = "fixed inset-0 bg-white/10 backdrop-blur-sm";
 
 const fadeInUp: Variants = {
@@ -216,7 +215,7 @@ const InventoryCard = memo(({
 InventoryCard.displayName = "InventoryCard";
 
 export default function InventoryPage() {
-  const { userRole, isLoading, user } = useAuth();
+  const { userRole, isLoading, user, userMeta } = useAuth();
   const router = useRouter();
   const {
     inventoryItems, fetchInventory,
@@ -373,33 +372,201 @@ export default function InventoryPage() {
   const consumables = useMemo(() => inventoryItems.filter(i => i.is_consumable && i.item_name.toLowerCase().includes(searchConsumable.toLowerCase())).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [inventoryItems, searchConsumable]);
   const nonConsumables = useMemo(() => inventoryItems.filter(i => !i.is_consumable && i.item_name.toLowerCase().includes(searchNonConsumable.toLowerCase())).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [inventoryItems, searchNonConsumable]);
 
-  const exportPDF = useCallback(() => {
+  const exportPDF = useCallback(async () => {
     const doc = new jsPDF("p", "mm", "a4");
-    doc.setFont("times", "normal");
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 14;
 
-    const headerFooter = (data: any) => {
-      const pageWidth = doc.internal.pageSize.width;
-      const pageHeight = doc.internal.pageSize.height;
+    const REPORT_LOGO_SRC = "/logo_newilalim.jpg";
+    const FALLBACK_LOGO_SRC = "/newilalim.png";
 
-      doc.setFillColor(30, 58, 138);
-      doc.rect(0, 0, pageWidth, 20, 'F');
-      doc.setFontSize(12);
-      doc.setTextColor(255, 255, 255);
-      doc.text("One Ilalim - Smart Disaster Monitoring System", pageWidth / 2, 12, { align: "center" });
-      doc.setFontSize(8);
-      doc.text("Inventory Report", pageWidth / 2, 17, { align: "center" });
-
-      doc.setFontSize(8);
-      doc.setTextColor(100);
-      doc.text("One Ilalim", 14, pageHeight - 10);
-      doc.text(`Page ${data.pageNumber}`, pageWidth - 14, pageHeight - 10, { align: "right" });
+    const getImageType = (src: string): "PNG" | "JPEG" => {
+      const ext = src.split(".").pop()?.toLowerCase();
+      return ext === "png" ? "PNG" : "JPEG";
     };
 
-    if (consumables.length > 0) {
-      doc.setFontSize(13);
-      doc.setTextColor(30, 58, 138);
-      doc.text("Consumables", 14, 30);
+    const loadLogo = (): Promise<{ img: HTMLImageElement; type: "PNG" | "JPEG" } | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.src = REPORT_LOGO_SRC;
+        img.onload = () => resolve({ img, type: getImageType(REPORT_LOGO_SRC) });
+        img.onerror = () => {
+          const fallbackImg = new Image();
+          fallbackImg.src = FALLBACK_LOGO_SRC;
+          fallbackImg.onload = () => resolve({ img: fallbackImg, type: getImageType(FALLBACK_LOGO_SRC) });
+          fallbackImg.onerror = () => resolve(null);
+        };
+      });
+    };
 
+    const logoPayload = await loadLogo();
+    const generatedBy = userMeta
+      ? `${userMeta.first_name || ""} ${userMeta.last_name || ""}`.trim()
+      : user?.email || "System Official";
+
+    // Only draw the top running header (no footer) during table page breaks
+    const renderedHeaderPages = new Set<number>();
+    const drawHeader = (data: any) => {
+      if (renderedHeaderPages.has(data.pageNumber)) return;
+      renderedHeaderPages.add(data.pageNumber);
+
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text("ONE ILALIM - SMART DISASTER MONITORING SYSTEM", margin, 10);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth - margin, 10, { align: "right" });
+      doc.setDrawColor(200);
+      doc.setLineWidth(0.2);
+      doc.line(margin, 12, pageWidth - margin, 12);
+    };
+
+    // ---------- 1. OFFICIAL HEADER ----------
+    let currentY = 16;
+    if (logoPayload) {
+      doc.addImage(logoPayload.img, logoPayload.type, margin, currentY, 20, 20);
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(30, 58, 138);
+    doc.text("REPUBLIC OF THE PHILIPPINES", margin + 23, currentY + 4);
+    doc.text("PROVINCE OF ZAMBALES | OLONGAPO CITY", margin + 23, currentY + 8);
+    doc.setFontSize(13);
+    doc.text("BARANGAY NEW ILALIM", margin + 23, currentY + 14);
+
+    currentY += 21;
+    doc.setDrawColor(30, 58, 138);
+    doc.setLineWidth(0.8);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    doc.setLineWidth(0.2);
+    doc.line(margin, currentY + 1, pageWidth - margin, currentY + 1);
+
+    // ---------- 2. REPORT TITLE & METADATA ----------
+    currentY += 9;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 58, 138);
+    doc.text("BARANGAY NEW ILALIM OFFICIAL INVENTORY REPORT", margin, currentY);
+
+    currentY += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(80);
+    doc.text(`Report Timeframe: Current Inventory Overview`, margin, currentY);
+    doc.text(`Status: Active & Archived Inventory Records`, pageWidth - margin, currentY, { align: "right" });
+
+    currentY += 4.5;
+    doc.text(`Prepared By: ${generatedBy}`, margin, currentY);
+    doc.text(`Document Reference: BNI-INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`, pageWidth - margin, currentY, { align: "right" });
+
+    currentY += 4;
+    doc.setDrawColor(220);
+    doc.setLineWidth(0.3);
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+
+    // ---------- 3. EXECUTIVE SUMMARY ----------
+    currentY += 8;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 58, 138);
+    doc.text("1. Executive Summary & Inventory Metrics", margin, currentY);
+
+    const totalItems = consumables.length + nonConsumables.length;
+    const totalConsumableQty = consumables.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const totalNonConsumableQty = nonConsumables.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const totalInUse = nonConsumables.reduce((sum, item) => sum + (item.in_use || 0), 0);
+    const totalAvailable = totalNonConsumableQty - totalInUse;
+
+    const summaryBody = [
+      ["Total Inventory Items", `${totalItems}`, "Consumable Items", `${consumables.length}`],
+      ["Non-Consumable Items", `${nonConsumables.length}`, "Total Quantity (Consumable)", `${totalConsumableQty}`],
+      ["Total Quantity (Non-Consumable)", `${totalNonConsumableQty}`, "Currently In Use", `${totalInUse}`],
+      ["Available (Non-Consumable)", `${totalAvailable}`, "Checkout Rate", totalNonConsumableQty ? `${Math.round((totalInUse / totalNonConsumableQty) * 100)}%` : "0%"]
+    ];
+
+    autoTable(doc, {
+      startY: currentY + 3,
+      body: summaryBody,
+      theme: "plain",
+      styles: { font: "helvetica", fontSize: 9, cellPadding: 3, overflow: "linebreak", valign: "middle" },
+      columnStyles: {
+        0: { fontStyle: "bold", textColor: [30, 58, 138], cellWidth: 58 },
+        1: { fontStyle: "bold", cellWidth: 30 },
+        2: { fontStyle: "bold", textColor: [220, 38, 38], cellWidth: 58 },
+        3: { fontStyle: "bold", cellWidth: 30 }
+      },
+      margin: { top: 16, bottom: 18, left: margin, right: margin },
+      didDrawPage: (data) => drawHeader(data),
+    });
+
+    currentY = (doc as any).lastAutoTable.finalY + 8;
+
+    // ---------- 4. INVENTORY GRAPH ----------
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 58, 138);
+    doc.text("2. Inventory Distribution Graph", margin, currentY);
+
+    currentY += 4;
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, currentY, pageWidth - margin * 2, 45, "F");
+
+    const graphOriginX = margin + 15;
+    const graphOriginY = currentY + 37;
+    const graphWidth = pageWidth - margin * 2 - 25;
+    const graphHeight = 28;
+
+    doc.setDrawColor(30, 58, 138);
+    doc.setLineWidth(0.4);
+    doc.line(graphOriginX, graphOriginY, graphOriginX + graphWidth, graphOriginY);
+    doc.line(graphOriginX, graphOriginY, graphOriginX, graphOriginY - graphHeight);
+
+    const bars = [
+      { label: "Consum.", value: consumables.length, color: [30, 58, 138] },
+      { label: "Non-Cons.", value: nonConsumables.length, color: [30, 58, 138] },
+      { label: "In Use", value: totalInUse, color: [239, 68, 68] },
+      { label: "Avail.", value: totalAvailable, color: [34, 197, 94] }
+    ];
+
+    const maxValue = Math.max(...bars.map(b => b.value), 4);
+    const barWidth = (graphWidth / bars.length) * 0.6;
+    const spacing = graphWidth / bars.length;
+
+    bars.forEach((bar, idx) => {
+      const barHeight = (bar.value / maxValue) * graphHeight;
+      const x = graphOriginX + idx * spacing + (spacing - barWidth) / 2;
+      if (barHeight > 0) {
+        doc.setFillColor(bar.color[0], bar.color[1], bar.color[2]);
+        doc.rect(x, graphOriginY - barHeight, barWidth, barHeight, "F");
+      }
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80);
+      doc.text(bar.label, x + barWidth / 2, graphOriginY + 5, { align: "center", maxWidth: spacing });
+    });
+
+    doc.setFontSize(6);
+    doc.setTextColor(120);
+    doc.setDrawColor(220, 225, 230);
+    doc.setLineWidth(0.15);
+    for (let i = 1; i <= 4; i++) {
+      const gridY = graphOriginY - (i / 4) * graphHeight;
+      const labelVal = Math.round((i / 4) * maxValue);
+      doc.line(graphOriginX, gridY, graphOriginX + graphWidth, gridY);
+      doc.text(labelVal.toString(), graphOriginX - 3, gridY + 1.5, { align: "right" });
+    }
+    doc.text("0", graphOriginX - 3, graphOriginY + 1.5, { align: "right" });
+
+    currentY += 49;
+
+    // ---------- 5. CONSUMABLE TABLE ----------
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 58, 138);
+    doc.text("3. Consumable Items Inventory", margin, currentY);
+
+    if (consumables.length > 0) {
       const consumableRows = consumables.map(item => [
         item.item_name,
         item.description || "-",
@@ -412,30 +579,41 @@ export default function InventoryPage() {
       ]);
 
       autoTable(doc, {
-        startY: 35,
+        startY: currentY + 3,
         head: [["Item", "Description", "Quantity", "Last Update", "Added By", "Created"]],
         body: consumableRows,
-        styles: { font: "times", fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [30, 58, 138], textColor: 255, font: "times" },
+        theme: "plain",
+        styles: { font: "helvetica", fontSize: 6.5, cellPadding: 2, overflow: "linebreak" },
+        headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
           0: { cellWidth: 30 },
-          1: { cellWidth: 35 },
+          1: { cellWidth: 40 },
           2: { cellWidth: 20 },
-          3: { cellWidth: 35 },
+          3: { cellWidth: 40 },
           4: { cellWidth: 25 },
-          5: { cellWidth: 25 },
+          5: { cellWidth: 25 }
         },
-        didDrawPage: (data: any) => headerFooter(data),
+        margin: { top: 16, bottom: 18, left: margin, right: margin },
+        didDrawPage: (data) => drawHeader(data),
       });
+
+      currentY = (doc as any).lastAutoTable.finalY + 10;
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text("No consumable items recorded.", margin, currentY + 5);
+      currentY += 10;
     }
 
+    // ---------- 6. NON-CONSUMABLE TABLE ----------
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 58, 138);
+    doc.text("4. Non-Consumable Items Inventory", margin, currentY);
+
     if (nonConsumables.length > 0) {
-      const startY = consumables.length > 0 ? (doc as any).lastAutoTable.finalY + 10 : 30;
-
-      doc.setFontSize(13);
-      doc.setTextColor(30, 58, 138);
-      doc.text("Non-Consumables", 14, startY);
-
       const nonConsumableRows = nonConsumables.map(item => {
         const checkoutSummary = item.checkouts
           ?.map(c => `${c.quantity_checked_out} by ${c.responsible_person_name} (return: ${formatDate(c.expected_return_date)})`)
@@ -455,11 +633,13 @@ export default function InventoryPage() {
       });
 
       autoTable(doc, {
-        startY: startY + 5,
+        startY: currentY + 3,
         head: [["Item", "Description", "Total", "In Use", "Available", "Added By", "Active Checkouts", "Created"]],
         body: nonConsumableRows,
-        styles: { font: "times", fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [30, 58, 138], textColor: 255, font: "times" },
+        theme: "plain",
+        styles: { font: "helvetica", fontSize: 6.5, cellPadding: 2, overflow: "linebreak" },
+        headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
           0: { cellWidth: 22 },
           1: { cellWidth: 28 },
@@ -467,20 +647,32 @@ export default function InventoryPage() {
           3: { cellWidth: 14 },
           4: { cellWidth: 14 },
           5: { cellWidth: 22 },
-          6: { cellWidth: 40 },
-          7: { cellWidth: 22 },
+          6: { cellWidth: 45 },
+          7: { cellWidth: 22 }
         },
-        didDrawPage: (data: any) => headerFooter(data),
+        margin: { top: 16, bottom: 18, left: margin, right: margin },
+        didDrawPage: (data) => drawHeader(data),
       });
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text("No non-consumable items recorded.", margin, currentY + 5);
     }
 
-    if (consumables.length === 0 && nonConsumables.length === 0) {
-      doc.setFontSize(12);
-      doc.text("No items found.", 14, 30);
+    // ---------- 7. FINAL FOOTER (page X of Y) ----------
+    const totalPages = doc.internal.pages.length - 1;
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text("CONFIDENTIAL - BARANGAY EMERGENCY OPS", margin, pageHeight - 10);
+      doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: "right" });
     }
 
-    doc.save(`inventory-report-${new Date().toISOString().slice(0, 10)}.pdf`);
-  }, [consumables, nonConsumables]);
+    doc.save(`barangay-inventory-report-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }, [consumables, nonConsumables, user, userMeta]);
 
   return (
     <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="h-auto xl:h-full xl:min-h-0 relative p-5">
