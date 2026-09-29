@@ -71,12 +71,7 @@ export default function AuthModal({ onClose }: Props) {
   };
 
   const validatePassword = (pwd: string): string | null => {
-    if (pwd.length < 8) return "Password must be at least 8 characters long.";
-    if (!/[A-Z]/.test(pwd)) return "Password must contain at least one uppercase letter.";
-    if (!/[a-z]/.test(pwd)) return "Password must contain at least one lowercase letter.";
-    if (!/[0-9]/.test(pwd)) return "Password must contain at least one number.";
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pwd))
-      return "Password must contain at least one special character (e.g., !@#$%^&*).";
+    if (pwd.length < 6) return "Password must be at least 6 characters long.";
     return null;
   };
 
@@ -399,7 +394,7 @@ export default function AuthModal({ onClose }: Props) {
 
                             <div>
                               <p className="text-xs text-gray-500">
-                                Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character.
+                                Password must be at least 6 characters long.
                               </p>
                               <input
                                 name="password"

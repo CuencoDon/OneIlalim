@@ -203,6 +203,20 @@ function ClickToPickLocation({
   return null;
 }
 
+// Responders can pick anywhere on the map, no boundary restriction
+function ClickToPickLocationFree({
+  onPick,
+}: {
+  onPick: (lat: number, lng: number) => void;
+}) {
+  useMapEvents({
+    click(e) {
+      onPick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
 function CustomRoutingControl({
   userLocation,
   destination,
@@ -534,6 +548,8 @@ function DisasterPopupContent({
   reporterRoleMap,
   resolvedByNameMap,
   onRespond,
+  isRespondingToThis = false,
+  onUpdateStatus,
 }: {
   disaster: Disaster;
   role: string | null;
@@ -542,6 +558,8 @@ function DisasterPopupContent({
   reporterRoleMap: Record<string, string>;
   resolvedByNameMap: Record<string, string>;
   onRespond?: (disaster: Disaster) => Promise<void> | void;
+  isRespondingToThis?: boolean;
+  onUpdateStatus?: (id: string, updates: Partial<Disaster>) => void;
 }) {
   const map = useMap();
   const [isUpdating, setIsUpdating] = useState(false);
@@ -556,13 +574,11 @@ function DisasterPopupContent({
     e.stopPropagation();
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
-    let success = false;
     setActionError(null);
     setIsUpdating(true);
     try {
       if (onRespond) {
         await onRespond(disaster);
-        success = true;
         map.closePopup();
         if (onFocus) onFocus("");
         return;
@@ -576,17 +592,19 @@ function DisasterPopupContent({
         })
         .eq("id", disaster.id);
       if (error) throw error;
-      success = true;
+      onUpdateStatus?.(disaster.id, {
+        status: "responding",
+        responded_by: user?.id,
+        responded_at: new Date().toISOString(),
+      });
       map.closePopup();
       if (onFocus) onFocus("");
     } catch (err: any) {
       console.error("Failed to respond:", err);
       setActionError("Failed to respond: " + (err.message ?? "Unknown error"));
     } finally {
-      if (!success) {
-        setIsUpdating(false);
-        isProcessingRef.current = false;
-      }
+      setIsUpdating(false);
+      isProcessingRef.current = false;
     }
   };
 
@@ -594,7 +612,6 @@ function DisasterPopupContent({
     e.stopPropagation();
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
-    let success = false;
     setActionError(null);
     setIsUpdating(true);
     try {
@@ -607,17 +624,19 @@ function DisasterPopupContent({
         })
         .eq("id", disaster.id);
       if (error) throw error;
-      success = true;
+      onUpdateStatus?.(disaster.id, {
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+        resolved_by: user?.id,
+      });
       map.closePopup();
       if (onFocus) onFocus("");
     } catch (err: any) {
       console.error("Failed to resolve:", err);
       setActionError("Failed to resolve: " + (err.message ?? "Unknown error"));
     } finally {
-      if (!success) {
-        setIsUpdating(false);
-        isProcessingRef.current = false;
-      }
+      setIsUpdating(false);
+      isProcessingRef.current = false;
     }
   };
 
@@ -625,7 +644,6 @@ function DisasterPopupContent({
     e.stopPropagation();
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
-    let success = false;
     setActionError(null);
     setIsUpdating(true);
     try {
@@ -637,17 +655,18 @@ function DisasterPopupContent({
         })
         .eq("id", disaster.id);
       if (error) throw error;
-      success = true;
+      onUpdateStatus?.(disaster.id, {
+        status: "archived",
+        archived_by: user?.id,
+      });
       map.closePopup();
       if (onFocus) onFocus("");
     } catch (err: any) {
       console.error("Failed to archive:", err);
       setActionError("Failed to archive: " + (err.message ?? "Unknown error"));
     } finally {
-      if (!success) {
-        setIsUpdating(false);
-        isProcessingRef.current = false;
-      }
+      setIsUpdating(false);
+      isProcessingRef.current = false;
     }
   };
 
@@ -659,13 +678,14 @@ function DisasterPopupContent({
   const isResponder = role === "responder";
   const isReporter = disaster.user_id === user?.id;
 
-  const showRespondButton = isResponder && disaster.status === "active";
-  const showResolveForResponder = isResponder && disaster.status === "responding";
-  const showOfficialButtons = isOfficial && (disaster.status === "active" || disaster.status === "responding");
+  const isCurrentlyResponding = disaster.status === "responding" || isRespondingToThis;
+  const showRespondButton = isResponder && disaster.status === "active" && !isCurrentlyResponding;
+  const showResolveForResponder = isResponder && isCurrentlyResponding;
+  const showOfficialButtons = isOfficial && (disaster.status === "active" || isCurrentlyResponding);
   const canArchive = isOfficial;
 
   const canSeeDetails =
-    role === "official" || isReporter || reporterRole === "official";
+    role === "official" || role === "responder" || isReporter || reporterRole === "official";
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return null;
@@ -711,9 +731,9 @@ function DisasterPopupContent({
               <Archive className="w-3 h-3" />
             )}
             <span>
-              {disaster.status === "active"
+              {disaster.status === "active" && !isRespondingToThis
                 ? "Active"
-                : disaster.status === "responding"
+                : isCurrentlyResponding
                   ? "Responding"
                   : disaster.status === "resolved"
                     ? "Resolved"
@@ -824,7 +844,7 @@ function DisasterPopupContent({
               {isUpdating ? "Resolving..." : "Resolve"}
             </button>
           )}
-          {canArchive && disaster.status !== "archived" && (
+          {canArchive && disaster.status === "resolved" && (
             <button
               onClick={handleArchive}
               disabled={isUpdating}
@@ -1231,12 +1251,8 @@ export default function Map({
     setIsGettingLocation(true);
     setLocationError(null);
 
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
+    // Fast first fix with getCurrentPosition
+    navigator.geolocation.getCurrentPosition(
       (pos) => {
         setCurrentLocation([pos.coords.latitude, pos.coords.longitude]);
         setLocationError(null);
@@ -1246,7 +1262,7 @@ export default function Map({
         setLocationError(err.message);
         setIsGettingLocation(false);
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
     );
   }, []);
 
@@ -1270,7 +1286,7 @@ export default function Map({
   );
 
   const handleMapPick = (lat: number, lng: number) => {
-    if (locationMode === "pick" && !isResponder) {
+    if (locationMode === "pick") {
       setPickedLocation([lat, lng]);
     }
   };
@@ -1504,6 +1520,18 @@ export default function Map({
         return;
       }
 
+      setLocalDisasters((prev) =>
+        prev.map((d) =>
+          d.id === disaster.id
+            ? {
+                ...d,
+                status: "responding",
+                responded_by: user.id,
+                responded_at: new Date().toISOString(),
+              }
+            : d
+        )
+      );
       setRespondingDisasterId(disaster.id);
       if (loc) {
         setRoutingDestination([disaster.lat, disaster.lng]);
@@ -1699,7 +1727,13 @@ export default function Map({
           />
         )}
 
-        {!readOnly && locationMode === "pick" && pickedLocation && !isResponder && (
+        {!readOnly && locationMode === "pick" && isResponder && (
+          <ClickToPickLocationFree
+            onPick={(lat, lng) => handleMapPick(lat, lng)}
+          />
+        )}
+
+        {!readOnly && locationMode === "pick" && pickedLocation && (
           <Marker position={pickedLocation} icon={userLocationIcon}>
             <Popup>Pinned location.</Popup>
           </Marker>
@@ -1773,6 +1807,12 @@ export default function Map({
                 reporterRoleMap={reporterRoleMap}
                 resolvedByNameMap={resolvedByNameMap}
                 onRespond={isResponder ? handleRespondToDisaster : undefined}
+                isRespondingToThis={respondingDisasterId === disaster.id}
+                onUpdateStatus={(id, updates) => {
+                  setLocalDisasters((prev) =>
+                    prev.map((d) => (d.id === id ? { ...d, ...updates } : d))
+                  );
+                }}
               />
             </Popup>
           </Marker>
@@ -1899,14 +1939,35 @@ export default function Map({
         />
       )}
 
+      {!readOnly && user && currentUserRole === "responder" && (
+        <ActionPanel
+          onReportDisaster={submitDisasterReport}
+          onSubmitEvacuation={submitEvacuationSite}
+          isSubmitting={isSubmitting}
+          mode={panelMode}
+          onModeChange={setPanelMode}
+          userRole={role}
+          locationMode={locationMode}
+          onLocationModeChange={handleLocationModeChange}
+          currentLocation={currentLocation}
+          pickedLocation={pickedLocation}
+          locationError={locationError}
+          onRequestLocation={requestDeviceLocation}
+          onClearPickedLocation={() => setPickedLocation(null)}
+          isGettingLocation={isGettingLocation}
+          responderMode={true}
+        />
+      )}
+
       {alertActive && (
-        <div className="fixed top-[80px] left-1/2 transform -translate-x-1/2 z-[10000]">
+        <div className="fixed top-1/2 right-4 -translate-y-1/2 z-[10000]">
           <button
             onClick={handleStopAlert}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 shadow-lg transition-all flex items-center gap-1"
+            className="bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-full px-3 py-2.5 shadow-xl border border-red-500/30 transition-all flex items-center gap-2 backdrop-blur-sm animate-pulse"
+            title="Stop Alarm Audio"
           >
-            <VolumeX size={16} />
-            <span className="text-xs font-medium">Stop Alert</span>
+            <VolumeX size={18} className="shrink-0" />
+            <span className="text-xs font-bold tracking-wide">Stop Alert</span>
           </button>
         </div>
       )}

@@ -23,6 +23,7 @@ interface ActionPanelProps {
   onRequestLocation: () => void;
   onClearPickedLocation: () => void;
   isGettingLocation: boolean;
+  responderMode?: boolean;
 }
 
 const DISASTER_CONFIG = {
@@ -47,6 +48,7 @@ export default function ActionPanel({
   onRequestLocation,
   onClearPickedLocation,
   isGettingLocation,
+  responderMode = false,
 }: ActionPanelProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [hazardDescription, setHazardDescription] = useState("");
@@ -155,17 +157,19 @@ export default function ActionPanel({
             >
               <div className="p-3 flex flex-col gap-2">
                 <div className="flex rounded-lg bg-gray-100 p-0.5 w-full gap-0.5">
-                  <button
-                    onClick={() => onModeChange("disaster")}
-                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      mode === "disaster"
-                        ? "bg-red-600 text-white shadow"
-                        : "text-gray-600 hover:text-gray-700"
-                    }`}
-                  >
-                    Report Disaster
-                  </button>
-                  {isOfficial && (
+                  {!responderMode && (
+                    <button
+                      onClick={() => onModeChange("disaster")}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        mode === "disaster"
+                          ? "bg-red-600 text-white shadow"
+                          : "text-gray-600 hover:text-gray-700"
+                      }`}
+                    >
+                      Report Disaster
+                    </button>
+                  )}
+                  {isOfficial && !responderMode && (
                     <button
                       onClick={() => onModeChange("evacuation")}
                       className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
@@ -176,6 +180,11 @@ export default function ActionPanel({
                     >
                       Add Evacuation Site
                     </button>
+                  )}
+                  {responderMode && (
+                    <div className="flex-1 py-1.5 text-xs font-semibold text-center text-white bg-[#1e3a8a] rounded-md">
+                      Your Location
+                    </div>
                   )}
                 </div>
 
@@ -229,7 +238,7 @@ export default function ActionPanel({
                   </div>
                 </div>
 
-                {mode === "disaster" ? (
+                {!responderMode && mode === "disaster" ? (
                   <>
                     {showHazardInput ? (
                       <div className="flex flex-col gap-2">
@@ -278,7 +287,7 @@ export default function ActionPanel({
                       </div>
                     )}
                   </>
-                ) : (
+                ) : !responderMode && mode === "evacuation" ? (
                   <div className="flex flex-col gap-2">
                     <input
                       type="text"
@@ -306,7 +315,7 @@ export default function ActionPanel({
                       </button>
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 {isSubmitting && (
                   <div className="text-center text-xs text-gray-500 flex justify-center gap-1">

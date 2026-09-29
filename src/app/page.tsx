@@ -288,7 +288,7 @@ export default function UnifiedMapPage() {
       {user && (
         <button
           onClick={() => setHazardMapVisible(true)}
-          className="absolute top-4 left-1/2 -translate-x-1/2 z-[1500] bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+          className="absolute top-1/2 left-4 -translate-y-1/2 z-[1500] bg-white/95 backdrop-blur-sm p-2 rounded-full shadow-lg border border-gray-200 hover:bg-gray-50 transition-colors"
           title="View Hazard Map"
         >
           <Map className="w-4 h-4 text-[#1e3a8a]" />
@@ -302,7 +302,7 @@ export default function UnifiedMapPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[10000] flex items-center justify-center bg-white/10 backdrop-blur-sm p-4 pt-[88px]"
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={() => setHazardMapVisible(false)}
           >
             <motion.div
@@ -310,7 +310,7 @@ export default function UnifiedMapPage() {
               animate={{ scale: 1 }}
               exit={{ scale: 0.9 }}
               transition={{ duration: 0.2 }}
-              className="relative max-w-full max-h-full"
+              className="relative w-full max-w-3xl max-h-[90vh] flex items-center justify-center"
               onClick={(e) => e.stopPropagation()}
             >
               <button
@@ -323,7 +323,7 @@ export default function UnifiedMapPage() {
               <img
                 src="/Hazard Map.jpg"
                 alt="Hazard Map"
-                className="max-w-[80vw] max-h-[75vh] object-contain rounded-2xl shadow-2xl"
+                className="w-full h-auto max-h-[85vh] object-contain rounded-2xl shadow-2xl"
               />
             </motion.div>
           </motion.div>
