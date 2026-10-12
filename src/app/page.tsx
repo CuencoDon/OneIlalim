@@ -444,15 +444,14 @@ export default function UnifiedMapPage() {
               className="inline-flex w-auto max-w-[92vw] flex-col rounded-xl bg-white px-5 py-6 shadow-xl"
             >
               <div className="mb-4 flex justify-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-                  <Lock size={24} className="text-blue-700" />
-                </div>
+                <img
+                  src="/logoscaps.png"
+                  alt="One Ilalim"
+                  className="h-60 max-w-[80vw] w-auto object-contain"
+                />
               </div>
-              <h3 className="mb-2 text-center text-lg font-semibold text-blue-900">
-                Locked
-              </h3>
-              <p className="text-center text-sm text-gray-700">
-                Sign up or log in to view and report disasters and evacuation sites.
+              <p className="text-center text-sm text-blue-900">
+                One Ilalim - Smart Disaster Monitoring System for Brgy. New Ilalim
               </p>
             </motion.div>
           </motion.div>

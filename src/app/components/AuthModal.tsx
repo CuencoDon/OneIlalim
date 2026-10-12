@@ -136,7 +136,6 @@ export default function AuthModal({ onClose }: Props) {
 
       const officialPasscode = process.env.NEXT_PUBLIC_OFFICIAL_PASSCODE || "";
       const responderPasscode = process.env.NEXT_PUBLIC_RESPONDER_PASSCODE || "";
-      const residentPasscode = process.env.NEXT_PUBLIC_RESIDENT_PASSCODE || "";
 
       if (form.role === "official" && form.passcode !== officialPasscode) {
         setError("Invalid barangay official passcode.");
@@ -148,12 +147,6 @@ export default function AuthModal({ onClose }: Props) {
         setLoading(false);
         return;
       }
-      if (form.role === "resident" && form.passcode !== residentPasscode) {
-        setError("Invalid resident passcode.");
-        setLoading(false);
-        return;
-      }
-
       if ((form.role === "official" || form.role === "responder") && !form.roleDescription.trim()) {
         setError("Please enter a role description (e.g., Kagawad, Fire Men).");
         setLoading(false);
@@ -265,6 +258,8 @@ export default function AuthModal({ onClose }: Props) {
                       ? "Enter your credentials to continue."
                       : step === 1
                       ? "First, tell us about yourself."
+                      : form.role === "resident"
+                      ? "Almost done! Choose your role."
                       : "Almost done! Choose your role and enter passcode."}
                   </p>
                 </div>
@@ -469,21 +464,17 @@ export default function AuthModal({ onClose }: Props) {
                               />
                             )}
 
-                            <input
-                              name="passcode"
-                              type="text"
-                              placeholder={
-                                form.role === "official"
-                                  ? "Official Passcode"
-                                  : form.role === "responder"
-                                  ? "Responder Passcode"
-                                  : "Resident Passcode"
-                              }
-                              value={form.passcode}
-                              onChange={handleChange}
-                              className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-blue-400 focus:outline-none"
-                              disabled={loading}
-                            />
+                            {(form.role === "official" || form.role === "responder") && (
+                              <input
+                                name="passcode"
+                                type="text"
+                                placeholder={form.role === "official" ? "Official Passcode" : "Responder Passcode"}
+                                value={form.passcode}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-blue-400 focus:outline-none"
+                                disabled={loading}
+                              />
+                            )}
 
                             <div className="flex items-center gap-2">
                               <input

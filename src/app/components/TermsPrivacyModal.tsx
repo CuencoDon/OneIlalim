@@ -24,8 +24,7 @@ You must be at least 18 years old or have parental consent to use the Platform. 
 - You agree to notify us immediately of any unauthorized use of your account.
 
 ## 4. User Roles and Passcodes
-- **Residents** must enter the resident passcode during sign‑up to verify their status.
-- **Barangay Officials** must enter the official passcode to obtain elevated privileges.
+- **Barangay Officials** and **Responders** must enter their respective passcodes during sign‑up to verify their roles.
 - Passcodes are provided by the barangay administration and must not be shared.
 
 ## 5. Acceptable Use
